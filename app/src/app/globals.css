@@ -1,26 +1,70 @@
 @import "tailwindcss";
 
+/* 디자인 토큰 — 라이트 기본(아침 계획), 다크 자동(저녁 마감) */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --surface: oklch(98.5% 0.003 90);
+  --surface-raised: #ffffff;
+  --ink: oklch(21% 0.01 270);
+  --ink-soft: oklch(45% 0.01 270);
+  --line: oklch(90% 0.005 270);
+  --accent: oklch(58% 0.19 260);
+  --radius-tile: 1.25rem;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --surface: oklch(18% 0.012 270);
+    --surface-raised: oklch(23% 0.014 270);
+    --ink: oklch(93% 0.005 270);
+    --ink-soft: oklch(65% 0.008 270);
+    --line: oklch(32% 0.01 270);
+    --accent: oklch(70% 0.15 260);
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--surface);
+  color: var(--ink);
+  font-feature-settings: "tnum";
+}
+
+/* 벤토 타일 공통 */
+.tile {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-tile);
+  padding: 1rem 1.1rem;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+}
+.tile-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+  margin-bottom: 0.5rem;
+}
+
+/* 영역 컬러 점 */
+.area-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+input, select, textarea {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.875rem;
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+button[type="submit"] {
+  border-radius: 0.6rem;
+  font-size: 0.875rem;
 }
