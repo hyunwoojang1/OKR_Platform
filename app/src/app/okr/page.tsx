@@ -1,5 +1,5 @@
-import { getOkrTree } from '@/lib/queries';
-import { createArea, createObjective, createKeyResult, createMilestone, createInitiative, updateKRProgress, setStatus } from '@/lib/actions';
+import { getOkrTree, getHabitsWithLogs } from '@/lib/queries';
+import { createArea, createObjective, createKeyResult, createMilestone, createInitiative, updateKRProgress, setStatus, syncKRsNow } from '@/lib/actions';
 import { kstQuarter, kstMonth, kstMonday } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -13,12 +13,15 @@ function signal(pct: number): string {
 }
 
 export default async function OkrPage() {
-  const tree = await getOkrTree();
+  const [tree, { habits }] = await Promise.all([getOkrTree(), getHabitsWithLogs(1)]);
 
   return (
     <main className="space-y-6">
-      <header className="flex items-baseline justify-between">
+      <header className="flex items-baseline justify-between gap-2">
         <h1 className="text-2xl font-bold tracking-tight">목표</h1>
+        <form action={syncKRsNow}>
+          <button type="submit" className="text-xs opacity-50 hover:opacity-100" title="습관·연동 KR 지금 갱신">↻ 자동 KR 갱신</button>
+        </form>
         <span className="text-sm opacity-60">{kstQuarter()}</span>
       </header>
 
@@ -73,6 +76,14 @@ export default async function OkrPage() {
                       <input name="title" placeholder="새 KR" className="flex-1 min-w-32" required />
                       <input name="target_value" placeholder="목표값" inputMode="decimal" className="w-16" required />
                       <input name="unit" placeholder="단위" className="w-12" />
+                      <select name="auto" defaultValue="" className="w-28" title="자동 집계 연결">
+                        <option value="">수동 입력</option>
+                        {habits.map((h) => (
+                          <option key={h.id} value={`habit:${h.id}`}>습관: {h.title.slice(0, 10)}</option>
+                        ))}
+                        <option value="api:auction_grade_a">연동: 경매 양호등급 수</option>
+                        <option value="api:jobs_sent">연동: 지원검토 공고 수</option>
+                      </select>
                       <button type="submit" className="border border-[var(--line)] px-2 py-1">＋KR</button>
                     </form>
 

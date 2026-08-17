@@ -10,6 +10,8 @@ export function db(): GoalhubClient {
     cached = createClient(config.supabaseUrl, config.supabaseSecretKey, {
       db: { schema: 'goalhub' },
       auth: { persistSession: false, autoRefreshToken: false },
+      // Next.js 데이터 캐시가 GET을 물고 stale을 돌려주는 것 방지 — 항상 실시간 조회
+      global: { fetch: (url, init) => fetch(url, { ...init, cache: 'no-store' }) },
     });
   }
   return cached;

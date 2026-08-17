@@ -10,6 +10,7 @@ function pub(): PublicClient {
     cached = createClient(config.supabaseUrl, config.supabaseSecretKey, {
       db: { schema: 'public' },
       auth: { persistSession: false, autoRefreshToken: false },
+      global: { fetch: (url, init) => fetch(url, { ...init, cache: 'no-store' }) },
     });
   }
   return cached;

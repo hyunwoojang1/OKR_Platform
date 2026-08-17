@@ -14,13 +14,15 @@ const DEFAULT_AREAS: Array<Pick<Area, 'name' | 'color' | 'icon'> & { sort_order:
 export async function getAreas(): Promise<Area[]> {
   const { data, error } = await db().from('areas').select('*').eq('archived', false).order('sort_order');
   if (error) throw new Error(`영역 조회 실패: ${error.message}`);
-  if (data.length === 0) {
-    // 최초 1회 기본 영역 시드
-    const { error: seedErr } = await db().from('areas').insert(DEFAULT_AREAS);
-    if (seedErr) throw new Error(`영역 시드 실패: ${seedErr.message}`);
-    return getAreas();
-  }
-  return data as Area[];
+  if (data.length > 0) return data as Area[];
+  // 최초 1회 기본 영역 시드 — unique(name) + ignoreDuplicates로 레이스에도 멱등, 재귀 없음
+  const { error: seedErr } = await db()
+    .from('areas').upsert(DEFAULT_AREAS, { onConflict: 'name', ignoreDuplicates: true });
+  if (seedErr) throw new Error(`영역 시드 실패: ${seedErr.message}`);
+  const { data: seeded, error: reErr } = await db()
+    .from('areas').select('*').eq('archived', false).order('sort_order');
+  if (reErr) throw new Error(`영역 재조회 실패: ${reErr.message}`);
+  return (seeded ?? []) as Area[];
 }
 
 export type OkrTree = {

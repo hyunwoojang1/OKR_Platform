@@ -55,17 +55,36 @@ export async function createMilestone(form: FormData) {
 export async function createKeyResult(form: FormData) {
   const target = Number(must(form.get('target_value'), '목표값'));
   if (!Number.isFinite(target) || target <= 0) throw new Error('목표값은 양수여야 합니다');
+  // auto 필드: "" | "habit:<habitId>" | "api:<커넥터키>"
+  const auto = ((form.get('auto') as string) ?? '').trim();
+  let source: 'manual' | 'habit_agg' | 'api' = 'manual';
+  let sourceRef: string | null = null;
+  if (auto.startsWith('habit:')) {
+    source = 'habit_agg';
+    sourceRef = auto.slice(6);
+  } else if (auto.startsWith('api:')) {
+    source = 'api';
+    if (!['auction_grade_a', 'jobs_sent'].includes(auto.slice(4))) throw new Error('허용되지 않은 커넥터');
+    sourceRef = auto.slice(4);
+  }
   await run('KR 생성', () =>
     db().from('key_results').insert({
       objective_id: must(form.get('objective_id'), 'Objective'),
       title: must(form.get('title'), '제목'),
       target_value: target,
       unit: (form.get('unit') as string)?.trim() || '',
-      source: ['manual', 'habit_agg'].includes(form.get('source') as string) ? (form.get('source') as string) : 'manual',
-      source_ref: (form.get('source_ref') as string)?.trim() || null,
+      source,
+      source_ref: sourceRef,
     }),
   );
   revalidatePath('/okr');
+}
+
+export async function syncKRsNow() {
+  const { syncAutoKRs } = await import('./kr-sync');
+  await syncAutoKRs();
+  revalidatePath('/okr');
+  revalidatePath('/');
 }
 
 export async function updateKRProgress(form: FormData) {
