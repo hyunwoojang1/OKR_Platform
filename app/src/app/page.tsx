@@ -15,9 +15,12 @@ export default async function TodayPage() {
 
   return (
     <main className="space-y-4">
-      <header>
-        <p className="text-sm opacity-60">{t.date} ({DAY_KO[dayIdx]})</p>
-        <h1 className="text-2xl font-bold tracking-tight">오늘</h1>
+      <header className="flex items-end justify-between">
+        <div>
+          <p className="text-sm opacity-60">{t.date} ({DAY_KO[dayIdx]})</p>
+          <h1 className="text-2xl font-bold tracking-tight">오늘</h1>
+        </div>
+        <Link href="/settings" aria-label="설정" className="pb-1 text-lg opacity-50 hover:opacity-100">⚙️</Link>
       </header>
 
       {/* 벤토 그리드: 한 타일 = 한 지표 */}

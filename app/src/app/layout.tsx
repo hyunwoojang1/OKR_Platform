@@ -18,11 +18,11 @@ export const viewport: Viewport = {
 
 const NAV = [
   { href: '/', label: '오늘', icon: '☀️' },
+  { href: '/hub', label: '허브', icon: '🔗' },
   { href: '/okr', label: '목표', icon: '🎯' },
   { href: '/habits', label: '습관', icon: '🔥' },
   { href: '/calendar', label: '일정', icon: '📅' },
   { href: '/close', label: '마감', icon: '🌙' },
-  { href: '/settings', label: '설정', icon: '⚙️' },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
