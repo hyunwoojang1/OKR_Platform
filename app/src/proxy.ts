@@ -21,13 +21,22 @@ export default async function proxy(req: NextRequest) {
   const session = await verifySession(token, secret);
   if (session) return NextResponse.next();
 
-  // dev 모드: 우회 세션을 즉석 발급 (내일 AUTH_MODE=google 전환 시 이 분기가 사라짐)
+  // dev 모드: 우회 세션 — 단, 공개 URL 보호를 위해 DEV_GATE_TOKEN 일치 시에만 발급.
+  // (내일 AUTH_MODE=google 전환 시 이 분기 전체가 비활성화됨)
   if ((process.env.AUTH_MODE ?? 'dev') === 'dev') {
+    const gate = process.env.DEV_GATE_TOKEN;
+    const provided = req.nextUrl.searchParams.get('devkey');
+    if (gate && provided !== gate) {
+      // 로컬(토큰 미설정)은 자유 통과, 배포(토큰 설정)는 ?devkey= 1회 입력 필요
+      return new NextResponse('locked — ?devkey= 필요 (임시 개발 게이트)', { status: 401 });
+    }
     const devToken = await signSession(
       { email: process.env.ALLOWED_EMAIL ?? 'hyunwoojang99@gmail.com', mode: 'dev', iat: Math.floor(Date.now() / 1000) },
       secret,
     );
-    const res = NextResponse.next();
+    const cleanUrl = req.nextUrl.clone();
+    cleanUrl.searchParams.delete('devkey');
+    const res = provided ? NextResponse.redirect(cleanUrl) : NextResponse.next();
     res.cookies.set(sessionCookie.name, devToken, { ...sessionCookie.options, maxAge: sessionCookie.maxAge });
     return res;
   }
