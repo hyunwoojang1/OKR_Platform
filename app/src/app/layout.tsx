@@ -22,6 +22,7 @@ const NAV = [
   { href: '/habits', label: '습관', icon: '🔥' },
   { href: '/calendar', label: '일정', icon: '📅' },
   { href: '/close', label: '마감', icon: '🌙' },
+  { href: '/settings', label: '설정', icon: '⚙️' },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
