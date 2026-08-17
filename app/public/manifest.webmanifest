@@ -1,0 +1,15 @@
+{
+  "name": "목표 허브",
+  "short_name": "목표허브",
+  "description": "캘린더 · OKR · 습관 · 아침 브리핑을 한 곳에서",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fafaf9",
+  "theme_color": "#fafaf9",
+  "lang": "ko",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

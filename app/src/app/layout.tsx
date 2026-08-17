@@ -39,6 +39,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             ))}
           </div>
         </nav>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(function(e){console.warn('SW 등록 실패',e)})}`,
+          }}
+        />
       </body>
     </html>
   );
