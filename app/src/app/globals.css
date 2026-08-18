@@ -1,70 +1,256 @@
 @import "tailwindcss";
 
-/* 디자인 토큰 — 라이트 기본(아침 계획), 다크 자동(저녁 마감) */
+/* ── 디자인 토큰: Amie 웜 미니멀 (docs/DESIGN_RESEARCH.md) ──
+   원칙: 웜톤 저채도 배경 / 그림자 4~12% 이중 레이어 / 영역색은 바·링·텍스트에만(통칠 금지)
+   radius 16px·4px 스페이싱 스케일 / 타이포 34·28·17·13·11 */
 :root {
-  --surface: oklch(98.5% 0.003 90);
-  --surface-raised: #ffffff;
-  --ink: oklch(21% 0.01 270);
-  --ink-soft: oklch(45% 0.01 270);
-  --line: oklch(90% 0.005 270);
-  --accent: oklch(58% 0.19 260);
-  --radius-tile: 1.25rem;
+  --bg: #faf9f7;
+  --card: #ffffff;
+  --card-2: #f4f2ef;
+  --ink: #1c1917;
+  --ink-soft: #78716c;
+  --ink-faint: #a8a29e;
+  --line: #eceae6;
+  --accent: #4f6ef7;
+  --danger: #ef4444;
+  --radius: 16px;
+  --radius-sm: 12px;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 12px rgb(0 0 0 / 0.05);
+  --shadow-raised: 0 2px 4px rgb(0 0 0 / 0.05), 0 8px 24px rgb(0 0 0 / 0.08);
+  --tabbar-bg: rgb(255 255 255 / 0.72);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --surface: oklch(18% 0.012 270);
-    --surface-raised: oklch(23% 0.014 270);
-    --ink: oklch(93% 0.005 270);
-    --ink-soft: oklch(65% 0.008 270);
-    --line: oklch(32% 0.01 270);
-    --accent: oklch(70% 0.15 260);
+    /* 다크: 그림자 대신 명도 4단 위계 (#0f→#1c→#2c→#3a) */
+    --bg: #0f0f10;
+    --card: #1c1c1e;
+    --card-2: #2c2c2e;
+    --ink: #f5f5f4;
+    --ink-soft: #a8a29e;
+    --ink-faint: #78716c;
+    --line: #2c2c2e;
+    --accent: #7b93ff;
+    --shadow-card: none;
+    --shadow-raised: none;
+    --tabbar-bg: rgb(22 22 24 / 0.78);
   }
 }
 
+/* ── 네이티브 셸: 이 블록이 「웹사이트 티」를 지운다 ── */
+html {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
+  font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", sans-serif;
+}
 body {
-  background: var(--surface);
+  background: var(--bg);
   color: var(--ink);
+  font-size: 17px;
+  line-height: 1.45;
+  letter-spacing: -0.011em;
   font-feature-settings: "tnum";
 }
+button, a, summary, label, nav {
+  -webkit-user-select: none;
+  user-select: none;
+}
+button { cursor: pointer; }
 
-/* 벤토 타일 공통 */
+/* 타이포 스케일 (iOS HIG) */
+.t-large { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
+.t-title { font-size: 22px; font-weight: 700; letter-spacing: -0.017em; }
+.t-body  { font-size: 17px; }
+.t-sub   { font-size: 13px; color: var(--ink-soft); }
+.t-cap   { font-size: 11px; color: var(--ink-faint); }
+
+/* ── 카드 ── */
 .tile {
-  background: var(--surface-raised);
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow-card);
   border: 1px solid var(--line);
-  border-radius: var(--radius-tile);
-  padding: 1rem 1.1rem;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
 }
 .tile-title {
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--ink-soft);
-  margin-bottom: 0.5rem;
+  margin-bottom: 10px;
 }
+/* 카드가 눌리는 감각 */
+.pressable { transition: transform 0.12s ease, box-shadow 0.12s ease; }
+.pressable:active { transform: scale(0.97); }
+
+/* ── 리스트 행: 좌측 영역 컬러바 + 원형 체크 ── */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  position: relative;
+}
+.row + .row { margin-top: 4px; }
+.row-bar {
+  position: absolute;
+  left: 0; top: 8px; bottom: 8px;
+  width: 4px;
+  border-radius: 4px;
+}
+
+/* 원형 체크 버튼 (Things 3식) */
+.check {
+  width: 26px; height: 26px;
+  min-width: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  display: flex; align-items: center; justify-content: center;
+  color: transparent;
+  font-size: 13px;
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.15s, border-color 0.15s, color 0.15s;
+}
+.check:active { transform: scale(0.85); }
+.check.on { color: #fff; animation: check-pop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes check-pop {
+  0% { transform: scale(0.7); }
+  60% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+/* 큰 체크(습관·마감용 44pt 터치 타깃) */
+.check-lg { width: 40px; height: 40px; min-width: 40px; font-size: 17px; border-width: 2.5px; }
+
+/* 카드 순차 등장 (Amie식 stagger) */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.rise { animation: rise-in 0.32s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+.rise:nth-child(2) { animation-delay: 0.05s; }
+.rise:nth-child(3) { animation-delay: 0.1s; }
+.rise:nth-child(4) { animation-delay: 0.15s; }
+.rise:nth-child(5) { animation-delay: 0.2s; }
+
+/* ── 입력: 날것 폼 티 제거 ── */
+input, select, textarea {
+  background: var(--card-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 16px; /* iOS 확대 방지 하한 */
+  color: var(--ink);
+  transition: border-color 0.15s, background 0.15s;
+  -webkit-appearance: none;
+  appearance: none;
+}
+input::placeholder { color: var(--ink-faint); }
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--card);
+}
+select {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a8a29e' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px;
+}
+input[type="color"] { padding: 4px; background: var(--card-2); }
+input[type="checkbox"] { -webkit-appearance: checkbox; appearance: auto; }
+
+/* 기본 버튼 */
+.btn {
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--card-2);
+  color: var(--ink);
+  white-space: nowrap;
+  transition: transform 0.12s ease, filter 0.12s;
+}
+.btn:active { transform: scale(0.95); }
+.btn-primary { background: var(--ink); color: var(--bg); }
+.btn-ghost { background: transparent; color: var(--ink-soft); }
+.btn-pill { border-radius: 999px; }
+
+/* ── 하단 탭바: 블러가 정체성 ── */
+.tabbar {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 40;
+  background: var(--tabbar-bg);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  backdrop-filter: blur(20px) saturate(1.6);
+  border-top: 0.5px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 0 6px;
+  flex: 1;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--ink-faint);
+  transition: color 0.15s, transform 0.12s;
+}
+.tab:active { transform: scale(0.92); }
+.tab.active { color: var(--ink); }
+.tab svg { width: 23px; height: 23px; }
+
+/* ── 바텀시트 (CSS만, 라이브러리 0kb) ── */
+.sheet-backdrop {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgb(0 0 0 / 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.sheet {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 61;
+  background: var(--card);
+  border-radius: 20px 20px 0 0;
+  box-shadow: var(--shadow-raised);
+  padding: 8px 20px calc(20px + env(safe-area-inset-bottom));
+  transform: translateY(105%);
+  transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.3, 1);
+  max-height: 85dvh;
+  overflow-y: auto;
+}
+.sheet-open .sheet { transform: translateY(0); }
+.sheet-open .sheet-backdrop { opacity: 1; pointer-events: auto; }
+.sheet-grab {
+  width: 36px; height: 4px;
+  border-radius: 4px;
+  background: var(--line);
+  margin: 4px auto 14px;
+}
+
+/* 진행바 */
+.bar-track { height: 6px; border-radius: 999px; background: var(--card-2); overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 999px; transition: width 0.4s cubic-bezier(0.2, 0.8, 0.3, 1); }
 
 /* 영역 컬러 점 */
-.area-dot {
-  display: inline-block;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 9999px;
-  flex-shrink: 0;
-}
+.area-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
 
-input, select, textarea {
-  background: var(--surface-raised);
-  border: 1px solid var(--line);
-  border-radius: 0.6rem;
-  padding: 0.4rem 0.6rem;
-  font-size: 0.875rem;
-}
-input:focus-visible, select:focus-visible, textarea:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-button[type="submit"] {
-  border-radius: 0.6rem;
-  font-size: 0.875rem;
+/* 잔디 칸 */
+.heat { aspect-ratio: 1; border-radius: 3px; }
+
+/* 칩 */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border-radius: 999px;
+  background: var(--card-2);
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 500;
 }

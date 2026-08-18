@@ -19,7 +19,7 @@ export default async function ClosePage() {
     <main className="space-y-4">
       <header>
         <p className="text-sm opacity-60">{t.date}</p>
-        <h1 className="text-2xl font-bold tracking-tight">하루 마감 🌙</h1>
+        <h1 className="t-large">하루 마감</h1>
       </header>
 
       {/* 요약 한 줄 */}
@@ -42,8 +42,8 @@ export default async function ClosePage() {
                   <form action={toggleTask}>
                     <input type="hidden" name="id" value={task.id} />
                     <input type="hidden" name="done" value="true" />
-                    <button type="submit" className="flex w-full items-center gap-3 rounded-xl border border-[var(--line)] p-3 text-left text-sm transition hover:border-[var(--accent)]">
-                      <span className="h-6 w-6 flex-shrink-0 rounded-full border-2" style={{ borderColor: area?.color ?? 'var(--line)' }} />
+                    <button type="submit" className="pressable flex w-full items-center gap-3 rounded-xl p-3 text-left text-[15px] font-medium" style={{ background: "var(--card-2)" }}>
+                      <span className="check" style={{ borderColor: area?.color ?? "var(--line)" }} />
                       {task.title}
                       <span className="ml-auto text-xs opacity-40">안 했으면 내일로 자동 이월</span>
                     </button>
@@ -69,8 +69,8 @@ export default async function ClosePage() {
                     <input type="hidden" name="habit_id" value={h.id} />
                     <input type="hidden" name="date" value={t.date} />
                     <input type="hidden" name="done" value="true" />
-                    <button type="submit" className="flex w-full items-center gap-3 rounded-xl border border-[var(--line)] p-3 text-left text-sm transition hover:border-[var(--accent)]">
-                      <span className="h-6 w-6 flex-shrink-0 rounded-full border-2" style={{ borderColor: color }} />
+                    <button type="submit" className="pressable flex w-full items-center gap-3 rounded-xl p-3 text-left text-[15px] font-medium" style={{ background: "var(--card-2)" }}>
+                      <span className="check" style={{ borderColor: color }} />
                       {h.title}
                       {streak > 0 && <span className="ml-auto text-xs opacity-60">🔥{streak} 유지 중</span>}
                     </button>
@@ -89,7 +89,7 @@ export default async function ClosePage() {
           <input type="hidden" name="date" value={t.date} />
           <input type="hidden" name="checked_count" value={doneCount + checkedHabits} />
           <input name="note" defaultValue={review?.note ?? ''} placeholder="오늘을 한 줄로…" className="flex-1 text-sm" maxLength={300} />
-          <button type="submit" className="border border-[var(--line)] px-4 text-sm">저장</button>
+          <button type="submit" className="btn btn-primary px-5">저장</button>
         </form>
       </section>
     </main>

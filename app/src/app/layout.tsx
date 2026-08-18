@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import Link from 'next/link';
+import Nav from './Nav';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -10,36 +10,28 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#fafaf9',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#faf9f7' },
+    { media: '(prefers-color-scheme: dark)', color: '#0f0f10' },
+  ],
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
 };
 
-const NAV = [
-  { href: '/', label: '오늘', icon: '☀️' },
-  { href: '/hub', label: '허브', icon: '🔗' },
-  { href: '/okr', label: '목표', icon: '🎯' },
-  { href: '/habits', label: '습관', icon: '🔥' },
-  { href: '/calendar', label: '일정', icon: '📅' },
-  { href: '/close', label: '마감', icon: '🌙' },
-];
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">
-      <body className="min-h-dvh bg-[var(--surface)] text-[var(--ink)] antialiased">
-        <div className="mx-auto max-w-3xl px-4 pb-24 pt-6">{children}</div>
-        <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-black/5 bg-[var(--surface-raised)]/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)]">
-          <div className="mx-auto flex max-w-3xl items-stretch justify-around">
-            {NAV.map((n) => (
-              <Link key={n.href} href={n.href} className="flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[11px] opacity-70 transition hover:opacity-100">
-                <span aria-hidden className="text-lg leading-none">{n.icon}</span>
-                {n.label}
-              </Link>
-            ))}
-          </div>
-        </nav>
+      <head>
+        {/* Pretendard Variable — 동적 서브셋(필요 글리프만 로드) */}
+        <link
+          rel="stylesheet"
+          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+        />
+      </head>
+      <body className="min-h-dvh antialiased">
+        <div className="mx-auto max-w-3xl px-5 pb-28 pt-4">{children}</div>
+        <Nav />
         <script
           dangerouslySetInnerHTML={{
             __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(function(e){console.warn('SW 등록 실패',e)})}`,

@@ -16,7 +16,7 @@ export default async function HubPage() {
   return (
     <main className="space-y-4">
       <header>
-        <h1 className="text-2xl font-bold tracking-tight">허브</h1>
+        <h1 className="t-large">허브</h1>
         <p className="text-xs opacity-50">econ-dashboard · 경매 · 채용 크롤러가 여기로 모여요</p>
       </header>
 
@@ -93,7 +93,7 @@ export default async function HubPage() {
                     <input type="hidden" name="company" value={j.company} />
                     <input type="hidden" name="title" value={j.title} />
                     <input type="hidden" name="url" value={j.url} />
-                    <button type="submit" className="whitespace-nowrap rounded-lg border border-[var(--line)] px-2 py-1 text-[11px] transition hover:border-emerald-500">
+                    <button type="submit" className="btn whitespace-nowrap px-2.5 py-1.5 text-[12px]">
                       할일로 ↴
                     </button>
                   </form>

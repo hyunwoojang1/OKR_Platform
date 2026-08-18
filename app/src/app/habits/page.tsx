@@ -20,7 +20,7 @@ export default async function HabitsPage() {
 
   return (
     <main className="space-y-4">
-      <h1 className="text-2xl font-bold tracking-tight">습관</h1>
+      <h1 className="t-large">습관</h1>
 
       {habits.length === 0 && <p className="text-sm opacity-60">아직 습관이 없어요. 아래에서 첫 습관을 만들어보세요.</p>}
 
@@ -43,7 +43,7 @@ export default async function HabitsPage() {
                 <button
                   type="submit"
                   aria-label={doneToday ? '오늘 체크 해제' : '오늘 체크'}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border-2 text-lg transition"
+                  className={`check check-lg ${doneToday ? "on" : ""}`}
                   style={doneToday ? { background: color, borderColor: color, color: '#fff' } : { borderColor: color }}
                 >
                   {doneToday ? '✓' : ''}
@@ -68,12 +68,12 @@ export default async function HabitsPage() {
               </svg>
             </div>
             {/* 28일 잔디 */}
-            <div className="mt-3 grid grid-cols-[repeat(14,1fr)] gap-1" role="img" aria-label="최근 28일 기록">
+            <div className="mt-3.5 grid grid-cols-[repeat(14,1fr)] gap-1" role="img" aria-label="최근 28일 기록">
               {dates.map((d) => (
                 <div
                   key={d}
                   title={d}
-                  className="aspect-square rounded-[3px]"
+                  className="heat"
                   style={{ background: doneSet.has(d) ? color : 'var(--line)', opacity: doneSet.has(d) ? 1 : 0.5 }}
                 />
               ))}
@@ -99,7 +99,7 @@ export default async function HabitsPage() {
             </select>
             <input name="target_per_week" type="number" min="1" max="7" defaultValue="3" className="w-16" aria-label="주 목표 횟수" />
           </div>
-          <button type="submit" className="w-full border border-[var(--line)] py-1.5">만들기</button>
+          <button type="submit" className="btn btn-primary w-full py-2.5">만들기</button>
         </form>
       </details>
     </main>

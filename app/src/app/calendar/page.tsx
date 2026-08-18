@@ -24,7 +24,7 @@ export default async function CalendarPage() {
   return (
     <main className="space-y-4">
       <header className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">일정</h1>
+        <h1 className="t-large">일정</h1>
         <span className="text-xs opacity-50">앞으로 14일 · Google 동기화 대기</span>
       </header>
 
@@ -36,7 +36,7 @@ export default async function CalendarPage() {
             <input name="starts_at" type="datetime-local" required aria-label="시작" />
             <input name="ends_at" type="datetime-local" aria-label="종료" />
             <label className="flex items-center gap-1 text-xs"><input type="checkbox" name="all_day" /> 종일</label>
-            <button type="submit" className="ml-auto border border-[var(--line)] px-3 py-1.5">추가</button>
+            <button type="submit" className="btn btn-primary ml-auto px-4 py-2">추가</button>
           </div>
         </form>
       </section>

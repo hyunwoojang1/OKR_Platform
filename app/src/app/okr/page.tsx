@@ -18,7 +18,7 @@ export default async function OkrPage() {
   return (
     <main className="space-y-6">
       <header className="flex items-baseline justify-between gap-2">
-        <h1 className="text-2xl font-bold tracking-tight">목표</h1>
+        <h1 className="t-large">목표</h1>
         <form action={syncKRsNow}>
           <button type="submit" className="text-xs opacity-50 hover:opacity-100" title="습관·연동 KR 지금 갱신">↻ 자동 KR 갱신</button>
         </form>
@@ -84,7 +84,7 @@ export default async function OkrPage() {
                         <option value="api:auction_grade_a">연동: 경매 양호등급 수</option>
                         <option value="api:jobs_sent">연동: 지원검토 공고 수</option>
                       </select>
-                      <button type="submit" className="border border-[var(--line)] px-2 py-1">＋KR</button>
+                      <button type="submit" className="btn px-2.5 py-1 text-xs">＋KR</button>
                     </form>
 
                     {/* 월 마일스톤 */}
@@ -119,7 +119,7 @@ export default async function OkrPage() {
                               <input type="hidden" name="area_id" value={area.id} />
                               <input type="hidden" name="week_of" value={kstMonday()} />
                               <input name="title" placeholder="이번 주 이니셔티브" className="flex-1" required />
-                              <button type="submit" className="border border-[var(--line)] px-2">＋</button>
+                              <button type="submit" className="btn px-2.5 py-1 text-xs">＋</button>
                             </form>
                           </div>
                         );
@@ -128,7 +128,7 @@ export default async function OkrPage() {
                         <input type="hidden" name="objective_id" value={obj.id} />
                         <input name="month" defaultValue={kstMonth()} className="w-20" required />
                         <input name="title" placeholder="새 월 마일스톤" className="flex-1" required />
-                        <button type="submit" className="border border-[var(--line)] px-2 py-1">＋마일스톤</button>
+                        <button type="submit" className="btn px-2.5 py-1 text-xs">＋마일스톤</button>
                       </form>
                     </div>
                   </div>
@@ -140,7 +140,7 @@ export default async function OkrPage() {
               <input type="hidden" name="area_id" value={area.id} />
               <input type="hidden" name="period" value={kstQuarter()} />
               <input name="title" placeholder={`${area.name} 분기 목표 추가`} className="flex-1" required />
-              <button type="submit" className="border border-[var(--line)] px-2 py-1">＋목표</button>
+              <button type="submit" className="btn px-2.5 py-1 text-xs">＋목표</button>
             </form>
           </section>
         );
@@ -152,7 +152,7 @@ export default async function OkrPage() {
           <input name="icon" placeholder="🏷" className="w-12" />
           <input name="name" placeholder="영역 이름" className="flex-1" required />
           <input name="color" type="color" defaultValue="#3b82f6" className="h-9 w-12 p-0.5" />
-          <button type="submit" className="border border-[var(--line)] px-3">추가</button>
+          <button type="submit" className="btn px-3">추가</button>
         </form>
       </details>
     </main>
