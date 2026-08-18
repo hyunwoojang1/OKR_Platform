@@ -16,7 +16,7 @@ export default async function OkrPage() {
   const [tree, { habits }] = await Promise.all([getOkrTree(), getHabitsWithLogs(1)]);
 
   return (
-    <main className="space-y-6">
+    <main className="space-y-4">
       <header className="flex items-baseline justify-between gap-2">
         <h1 className="t-large">목표</h1>
         <form action={syncKRsNow}>
@@ -25,6 +25,7 @@ export default async function OkrPage() {
         <span className="text-sm opacity-60">{kstQuarter()}</span>
       </header>
 
+      <div className="grid gap-4 md:grid-cols-2">
       {tree.areas.map((area) => {
         const objectives = tree.objectives.filter((o) => o.area_id === area.id);
         return (
@@ -145,6 +146,8 @@ export default async function OkrPage() {
           </section>
         );
       })}
+
+      </div>
 
       <details className="tile">
         <summary className="cursor-pointer text-sm font-medium opacity-70">＋ 새 영역</summary>

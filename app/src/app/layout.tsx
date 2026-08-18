@@ -10,10 +10,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#faf9f7' },
-    { media: '(prefers-color-scheme: dark)', color: '#0f0f10' },
-  ],
+  themeColor: '#0a0f1c',
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
@@ -30,8 +27,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="min-h-dvh antialiased">
-        <div className="mx-auto max-w-3xl px-5 pb-28 pt-4">{children}</div>
         <Nav />
+        <div className="mx-auto max-w-6xl px-5 pb-28 pt-4 md:px-6 md:pb-12">{children}</div>
         <script
           dangerouslySetInnerHTML={{
             __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(function(e){console.warn('SW 등록 실패',e)})}`,

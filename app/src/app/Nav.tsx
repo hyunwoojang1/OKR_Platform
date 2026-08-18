@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-// 탭바 아이콘: 이모지 대신 SVG 스트로크 (활성 시 fill 전환)
 const S = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
 
 const ICONS: Record<string, (active: boolean) => React.ReactNode> = {
@@ -55,22 +54,46 @@ const NAV = [
   { href: '/close', label: '마감', icon: 'close' },
 ];
 
+function isActive(href: string, pathname: string) {
+  return href === '/' ? pathname === '/' : pathname.startsWith(href);
+}
+
 export default function Nav() {
   const pathname = usePathname();
   if (pathname === '/login') return null;
   return (
-    <nav className="tabbar" aria-label="주 탐색">
-      <div className="mx-auto flex max-w-3xl items-stretch">
-        {NAV.map((n) => {
-          const active = n.href === '/' ? pathname === '/' : pathname.startsWith(n.href);
-          return (
-            <Link key={n.href} href={n.href} className={`tab ${active ? 'active' : ''}`}>
-              {ICONS[n.icon](active)}
-              {n.label}
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
+    <>
+      {/* 데스크톱: econ식 상단 네비 */}
+      <header className="topnav hidden md:block">
+        <div className="mx-auto flex max-w-6xl items-center gap-6 px-6 py-2.5">
+          <Link href="/" className="flex items-center gap-2 text-[15px] font-800 font-extrabold tracking-tight">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black" style={{ background: 'var(--accent)', color: '#fff' }}>G</span>
+            목표 허브
+          </Link>
+          <nav className="ml-auto flex items-center gap-1">
+            {NAV.map((n) => (
+              <Link key={n.href} href={n.href} className={`topnav-link ${isActive(n.href, pathname) ? 'active' : ''}`}>
+                {n.label}
+              </Link>
+            ))}
+            <Link href="/settings" aria-label="설정" className={`topnav-link ${pathname.startsWith('/settings') ? 'active' : ''}`}>⚙</Link>
+          </nav>
+        </div>
+      </header>
+      {/* 모바일: 하단 블러 탭바 */}
+      <nav className="tabbar md:hidden" aria-label="주 탐색">
+        <div className="mx-auto flex max-w-3xl items-stretch">
+          {NAV.map((n) => {
+            const active = isActive(n.href, pathname);
+            return (
+              <Link key={n.href} href={n.href} className={`tab ${active ? 'active' : ''}`}>
+                {ICONS[n.icon](active)}
+                {n.label}
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
+    </>
   );
 }

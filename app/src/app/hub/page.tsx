@@ -20,6 +20,7 @@ export default async function HubPage() {
         <p className="text-xs opacity-50">econ-dashboard · 경매 · 채용 크롤러가 여기로 모여요</p>
       </header>
 
+      <div className="grid gap-4 lg:grid-cols-2">
       {/* 경매 추천 */}
       <section className="tile" style={{ borderLeft: '4px solid #f59e0b' }}>
         <h2 className="tile-title">🏠 경매 차익 추천 (보수 차익 기준)</h2>
@@ -64,6 +65,8 @@ export default async function HubPage() {
           </>
         )}
       </section>
+
+      </div>
 
       {/* 채용 공고 → 할일 보내기 (쓰기 1호) */}
       <section className="tile" style={{ borderLeft: '4px solid #10b981' }}>

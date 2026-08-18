@@ -22,7 +22,7 @@ export default async function CalendarPage() {
   }
 
   return (
-    <main className="space-y-4">
+    <main className="mx-auto max-w-2xl space-y-4">
       <header className="flex items-baseline justify-between">
         <h1 className="t-large">일정</h1>
         <span className="text-xs opacity-50">앞으로 14일 · Google 동기화 대기</span>

@@ -16,7 +16,7 @@ export default async function ClosePage() {
   const allClear = openTasks.length === 0 && uncheckedHabits.length === 0;
 
   return (
-    <main className="space-y-4">
+    <main className="mx-auto max-w-2xl space-y-4">
       <header>
         <p className="text-sm opacity-60">{t.date}</p>
         <h1 className="t-large">하루 마감</h1>

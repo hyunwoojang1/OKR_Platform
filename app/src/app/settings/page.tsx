@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 export default function SettingsPage() {
   return (
-    <main className="space-y-4">
+    <main className="mx-auto max-w-2xl space-y-4">
       <h1 className="t-large">설정</h1>
 
       <section className="tile">

@@ -24,6 +24,7 @@ export default async function HabitsPage() {
 
       {habits.length === 0 && <p className="text-sm opacity-60">아직 습관이 없어요. 아래에서 첫 습관을 만들어보세요.</p>}
 
+      <div className="grid gap-4 md:grid-cols-2">
       {habits.map((h) => {
         const area = areas.find((a) => a.id === h.area_id);
         const color = area?.color ?? '#6b7280';
@@ -81,6 +82,8 @@ export default async function HabitsPage() {
           </section>
         );
       })}
+
+      </div>
 
       <details className="tile">
         <summary className="cursor-pointer text-sm font-medium opacity-70">＋ 새 습관</summary>

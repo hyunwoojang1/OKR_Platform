@@ -14,8 +14,8 @@ export default function AddTaskSheet({ areas }: { areas: Area[] }) {
       <button
         aria-label="할일 추가"
         onClick={() => setOpen(true)}
-        className="pressable fixed bottom-24 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full text-2xl font-light"
-        style={{ background: 'var(--ink)', color: 'var(--bg)', boxShadow: 'var(--shadow-raised)' }}
+        className="pressable fixed bottom-24 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full text-2xl font-light md:bottom-8 md:right-8"
+        style={{ background: 'var(--accent)', color: '#fff', boxShadow: 'var(--shadow-raised)' }}
       >
         ＋
       </button>
@@ -39,7 +39,7 @@ export default function AddTaskSheet({ areas }: { areas: Area[] }) {
               type="button"
               onClick={() => setAreaId('')}
               className="chip"
-              style={areaId === '' ? { background: 'var(--ink)', color: 'var(--bg)' } : undefined}
+              style={areaId === '' ? { background: 'var(--accent)', color: '#fff', borderColor: 'transparent' } : undefined}
             >
               없음
             </button>
