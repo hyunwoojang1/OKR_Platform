@@ -1,5 +1,7 @@
 # versions.md — 목표관리설정
 
+- 2026-08-24 20:00 KST — P5 완료(로컬 검증): Google OAuth 클라이언트 발급(claude-mcp-calendar 프로젝트 재활용, goal-hub 웹 클라이언트) + AUTH_MODE=google 로그인 실검증 + 캘린더 양방향 동기화 구현(lib/google-calendar.ts — push pending/pull 60일 배치 upsert/삭제 왕복 반영, 캘린더 페이지·아침 브리핑 크론에 연결). 페이지 내 동기화 이벤트별 왕복 → 배치 3쿼리로 개선(30s→1.3s). 프로덕션 env 전환은 다음 단계.
+
 - 2026-08-18 10:25 KST — 디자인 v3: 사용자 재피드백(공백 과다·OKR 부재·리스트 나열) → econ·auction 레퍼런스로 딥네이비 대시보드 전환. econ oklch 토큰 이식, KPI밴드, 홈 OKR 진척 섹션, 데스크톱 상단네비+12컬럼, 배포 완료.
 
 - 2026-08-18 10:04 KST — 디자인 전면 개편(사용자 혹평 → 리서치 2건 → Amie 웜 미니멀 확정): Pretendard Variable, 웜톤 토큰+얕은 이중그림자, 영역색은 바·링·칩에만, SVG 블러 탭바, FAB+CSS 바텀시트, 체크 스프링·stagger, 네이티브셸 CSS 3종. 리서치 정본 docs/DESIGN_RESEARCH.md. 프로덕션 재배포 완료.

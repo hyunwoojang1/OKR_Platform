@@ -1,12 +1,14 @@
 import { db } from '@/lib/db';
-import { createEvent, deleteEvent } from '@/lib/actions';
+import { createEvent, deleteEvent, syncCalendarNow } from '@/lib/actions';
+import { syncCalendar } from '@/lib/google-calendar';
 import type { CalendarEvent } from '@/lib/types';
 import { kstToday } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
-// 앞으로 14일 아젠다 뷰 (Google 동기화 연결 전까지 앱 일정만)
+// 앞으로 14일 아젠다 뷰 — 페이지 진입 시 Google 양방향 동기화(1분 스로틀) 후 조회
 export default async function CalendarPage() {
+  const sync = await syncCalendar();
   const today = kstToday();
   const from = new Date(`${today}T00:00:00+09:00`).toISOString();
   const to = new Date(Date.now() + 14 * 86400_000).toISOString();
@@ -25,7 +27,16 @@ export default async function CalendarPage() {
     <main className="mx-auto max-w-2xl space-y-4">
       <header className="flex items-baseline justify-between">
         <h1 className="t-large">일정</h1>
-        <span className="text-xs opacity-50">앞으로 14일 · Google 동기화 대기</span>
+        <span className="flex items-center gap-2 text-xs opacity-50">
+          앞으로 14일 · {sync.connected && !sync.error ? 'Google 연동됨' : sync.error ?? 'Google 미연결'}
+          {sync.connected && (
+            <form action={syncCalendarNow}>
+              <button type="submit" aria-label="지금 동기화" className="underline underline-offset-2 hover:opacity-100">
+                동기화
+              </button>
+            </form>
+          )}
+        </span>
       </header>
 
       <section className="tile">

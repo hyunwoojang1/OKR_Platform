@@ -16,6 +16,10 @@ export async function GET(req: NextRequest) {
       console.error('KR 자동채움 실패:', e);
       return { updated: -1, unchanged: -1, skipped: -1 };
     });
+    // Google 캘린더 동기화 → 브리핑이 오늘의 구글 일정까지 보게 함. 실패해도 브리핑은 계속.
+    const { syncCalendar } = await import('@/lib/google-calendar');
+    const calSync = await syncCalendar(true);
+    if (calSync.error) console.error('캘린더 동기화 실패:', calSync.error);
     const briefing = await buildMorningBriefing();
     const { error } = await db().from('briefings').upsert(
       { date: briefing.date, kind: 'morning', content: briefing, sent_at: new Date().toISOString() },
@@ -28,7 +32,7 @@ export async function GET(req: NextRequest) {
       url: '/',
       tag: 'morning',
     });
-    return NextResponse.json({ ok: true, carried: briefing.carried, tasks: briefing.tasks.length, krSync, push });
+    return NextResponse.json({ ok: true, carried: briefing.carried, tasks: briefing.tasks.length, krSync, calSync, push });
   } catch (e) {
     console.error('morning-briefing 실패:', e);
     return NextResponse.json({ error: e instanceof Error ? e.message : 'unknown' }, { status: 500 });

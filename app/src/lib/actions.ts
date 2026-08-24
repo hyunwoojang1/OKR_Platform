@@ -193,8 +193,24 @@ export async function createEvent(form: FormData) {
 }
 
 export async function deleteEvent(form: FormData) {
-  await run('일정 삭제', () => db().from('calendar_events').delete().eq('id', must(form.get('id'), '일정')).eq('source', 'app'));
+  const id = must(form.get('id'), '일정');
+  const { data, error } = await db()
+    .from('calendar_events').select('google_event_id').eq('id', id).eq('source', 'app').maybeSingle();
+  if (error) throw new Error(`일정 조회 실패: ${error.message}`);
+  if (data?.google_event_id) {
+    const { deleteGoogleEvent } = await import('./google-calendar');
+    await deleteGoogleEvent(data.google_event_id);
+  }
+  await run('일정 삭제', () => db().from('calendar_events').delete().eq('id', id).eq('source', 'app'));
   revalidatePath('/calendar');
+}
+
+export async function syncCalendarNow() {
+  const { syncCalendar } = await import('./google-calendar');
+  const result = await syncCalendar(true);
+  if (result.error) throw new Error(`캘린더 동기화 실패: ${result.error}`);
+  revalidatePath('/calendar');
+  revalidatePath('/');
 }
 
 // ── 저녁 마감 ──
