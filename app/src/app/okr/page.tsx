@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import type { Area, Objective, KeyResult, Initiative } from '@/lib/types';
-import { kstToday, kstMonday } from '@/lib/types';
+import { kstToday, kstMonday, krPct } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,9 +43,7 @@ export default async function OkrPage() {
       {objectives.map((obj) => {
         const objKrs = krs.filter((k) => k.objective_id === obj.id);
         const pct = objKrs.length
-          ? Math.round(
-              objKrs.reduce((s, k) => s + Math.min(100, (k.current_value / k.target_value) * 100), 0) / objKrs.length,
-            )
+          ? Math.round(objKrs.reduce((s, k) => s + krPct(k), 0) / objKrs.length)
           : 0;
         const myWeek = weekInis.filter((i) => i.objective_id === obj.id);
         const doneCount = myWeek.filter((i) => i.status === 'done').length;

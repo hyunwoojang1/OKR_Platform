@@ -9,8 +9,17 @@ export const dynamic = 'force-dynamic';
 export default async function NewGoalPage() {
   const [areasQ, evQ] = await Promise.all([
     db().from('areas').select('*').eq('archived', false).order('sort_order'),
-    db().from('calendar_events').select('id').gte('starts_at', new Date().toISOString()).limit(100),
+    db()
+      .from('calendar_events')
+      .select('title, starts_at')
+      .gte('starts_at', new Date().toISOString())
+      .order('starts_at')
+      .limit(50),
   ]);
   if (areasQ.error) throw new Error(`영역 조회 실패: ${areasQ.error.message}`);
-  return <GoalWizard areas={(areasQ.data as Area[]) ?? []} upcomingCount={(evQ.data ?? []).length} />;
+  const upcoming = ((evQ.data ?? []) as { title: string; starts_at: string }[]).map((e) => ({
+    title: e.title,
+    date: new Date(new Date(e.starts_at).getTime() + 9 * 3600_000).toISOString().slice(0, 10),
+  }));
+  return <GoalWizard areas={(areasQ.data as Area[]) ?? []} upcoming={upcoming} />;
 }

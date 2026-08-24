@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
 import { createLog, toggleInitiativeDone, updateKRProgress } from '@/lib/actions';
 import type { Area, Objective, KeyResult, Initiative, SessionLog } from '@/lib/types';
-import { kstToday, kstMonday, kstMonth } from '@/lib/types';
+import { kstToday, kstMonday, kstMonth, krPct } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,7 +41,7 @@ export default async function GoalDetailPage({
   const area = areaRow as Area | null;
 
   const pct = krs.length
-    ? Math.round(krs.reduce((s, k) => s + Math.min(100, (k.current_value / k.target_value) * 100), 0) / krs.length)
+    ? Math.round(krs.reduce((s, k) => s + krPct(k), 0) / krs.length)
     : 0;
 
   // 주차: 이니셔티브의 week_of들로 목표의 주 목록을 만든다
@@ -100,13 +100,18 @@ export default async function GoalDetailPage({
             <div className="sec-label">이걸로 판단해요</div>
             <div className="overflow-hidden rounded-2xl border" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
               {krs.map((kr, i) => {
-                const kpct = Math.min(100, Math.round((kr.current_value / kr.target_value) * 100));
+                const kpct = krPct(kr);
+                const isWeekly = kr.cadence === 'weekly';
+                const isDecrease = !isWeekly && kr.start_value > kr.target_value;
                 return (
                   <div key={kr.id}>
                     {i > 0 && <div className="divider mx-4" />}
                     <div className="flex flex-col gap-2 px-4 py-[15px]">
                       <div className="flex items-baseline justify-between gap-3">
-                        <span className="text-[15px]">{kr.title}</span>
+                        <span className="text-[15px]">
+                          {kr.title}
+                          {isWeekly && <span className="badge badge-accent ml-1.5 align-middle">매주</span>}
+                        </span>
                         {kr.source === 'manual' ? (
                           <form action={updateKRProgress} className="flex items-baseline gap-0.5">
                             <input type="hidden" name="id" value={kr.id} />
@@ -118,13 +123,13 @@ export default async function GoalDetailPage({
                               className="mono w-12 !border-0 !bg-transparent !p-0 text-right !text-[13px]"
                               style={{ color: 'var(--ink)', borderBottom: '1px dashed var(--line-strong)' }}
                             />
-                            <span className="mono text-[13px]" style={{ color: 'var(--ink-4)' }}>/{kr.target_value}{kr.unit}</span>
+                            <span className="mono text-[13px]" style={{ color: 'var(--ink-4)' }}>{isDecrease ? ' → ' : '/'}{kr.target_value}{kr.unit}</span>
                             <button type="submit" className="sr-only">저장</button>
                           </form>
                         ) : (
                           <span className="mono text-[13px]">
                             {kr.current_value}
-                            <span style={{ color: 'var(--ink-4)' }}>/{kr.target_value}{kr.unit}</span>
+                            <span style={{ color: 'var(--ink-4)' }}>{isDecrease ? ' → ' : '/'}{kr.target_value}{kr.unit}</span>
                           </span>
                         )}
                       </div>
