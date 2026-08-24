@@ -4,13 +4,14 @@ export type Area = {
 export type Objective = {
   id: string; area_id: string; title: string; period: string;
   status: 'active' | 'done' | 'dropped'; note: string | null; due_date: string | null;
+  parent_id: string | null; // 계열화: 소목표 → 대목표 (2단 트리)
 };
 export type Milestone = {
   id: string; objective_id: string; month: string; title: string; status: 'active' | 'done' | 'dropped';
 };
 export type KeyResult = {
   id: string; objective_id: string; title: string; target_value: number; current_value: number;
-  unit: string; source: 'manual' | 'habit_agg' | 'api'; source_ref: string | null;
+  unit: string; source: 'manual' | 'habit_agg' | 'api' | 'log_agg' | 'goal_agg'; source_ref: string | null;
 };
 export type Initiative = {
   id: string; milestone_id: string | null; objective_id: string | null; area_id: string | null;

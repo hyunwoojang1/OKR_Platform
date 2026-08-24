@@ -116,7 +116,17 @@ export async function setStatus(form: FormData) {
   const status = must(form.get('status'), '상태');
   if (!['objectives', 'milestones', 'initiatives'].includes(table)) throw new Error('허용되지 않은 대상');
   if (!['active', 'done', 'dropped'].includes(status)) throw new Error('허용되지 않은 상태');
-  await run('상태 변경', () => db().from(table).update({ status }).eq('id', must(form.get('id'), 'id')));
+  const id = must(form.get('id'), 'id');
+  await run('상태 변경', () => db().from(table).update({ status }).eq('id', id));
+  // 소목표 완료/취소 → 대목표의 "소목표 달성" 지표 롤업 + 물결 로그 (실패해도 상태 변경은 유지)
+  if (table === 'objectives') {
+    const { completeChildRollup, ensureGoalAggKR } = await import('./goal-link');
+    if (status === 'done') await completeChildRollup(id);
+    else {
+      const { data } = await db().from('objectives').select('parent_id').eq('id', id).maybeSingle();
+      if (data?.parent_id) await ensureGoalAggKR(data.parent_id).catch((e) => console.error('[goal-rollup]', e));
+    }
+  }
   revalidatePath('/okr');
   revalidatePath('/');
 }
@@ -247,13 +257,98 @@ export async function toggleInitiativeDone(form: FormData) {
   revalidatePath('/');
 }
 
+// v4 위저드 AI 초안: 목표 한 줄 → 지표(KR)·주별 계획 제안. 로컬 Ollama(무료) 우선.
+// 제안만 한다 — 저장은 사용자가 검토 후 확정할 때(createGoalPlan)만 일어난다.
+export type GoalSuggestion = {
+  krs: { title: string; target: number; unit: string }[];
+  weeks: string[];
+  engine: string;
+};
+
+export async function suggestGoalPlan(payload: {
+  title: string;
+  areaName: string;
+  weekCount: number;
+}): Promise<GoalSuggestion> {
+  const { chatCompleteJson } = await import('./llm');
+  const title = payload.title.trim().slice(0, 200);
+  if (!title) throw new Error('목표 제목이 비어 있습니다');
+  const weekCount = Math.min(12, Math.max(1, Math.floor(payload.weekCount) || 6));
+  const areaName = payload.areaName.trim().slice(0, 50);
+
+  const { content, engine, model } = await chatCompleteJson([
+    {
+      role: 'system',
+      content:
+        '너는 개인 목표 설계 코치다. 반드시 JSON 객체 하나만 출력한다. 다른 텍스트 금지. ' +
+        '형식: {"krs":[{"title":"지표 이름(명사형, 15자 이내)","target":숫자,"unit":"단위(회/개/km/점 등 3자 이내)"}],"weeks":["1주차 계획 한 줄", ...]}. ' +
+        'krs는 정확히 2~3개 — 숫자로 셀 수 있는 것만. weeks는 정확히 요청된 주 수만큼, 각 한 줄 25자 이내, 앞 주는 준비·뒷 주는 마무리 흐름으로.',
+    },
+    {
+      role: 'user',
+      content: `목표: "${title}"\n영역: ${areaName || '일반'}\n기간: ${weekCount}주\n이 목표의 달성 판단 지표(krs)와 ${weekCount}주 주별 계획(weeks)을 JSON으로.`,
+    },
+  ]);
+
+  // LLM 출력은 외부 입력 — 구조를 엄격히 검증하고 넘치는 것은 자른다.
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error('AI 응답을 해석하지 못했어요. 다시 시도해주세요.');
+  }
+  const obj = (typeof parsed === 'object' && parsed !== null ? parsed : {}) as {
+    krs?: unknown;
+    weeks?: unknown;
+  };
+  const krs = (Array.isArray(obj.krs) ? obj.krs : [])
+    .map((k) => {
+      const r = (typeof k === 'object' && k !== null ? k : {}) as Record<string, unknown>;
+      const target = Number(r.target);
+      return {
+        title: String(r.title ?? '').trim().slice(0, 30),
+        target: Number.isFinite(target) && target > 0 ? target : 0,
+        unit: String(r.unit ?? '').trim().slice(0, 6),
+      };
+    })
+    .filter((k) => k.title && k.target > 0)
+    .slice(0, 3);
+  const weeks = (Array.isArray(obj.weeks) ? obj.weeks : [])
+    // UI가 이미 "N주" 라벨을 붙이므로 모델이 넣은 "1주차:" 접두어는 중복 — 제거
+    .map((w) => String(w ?? '').trim().replace(/^\d+\s*주차?\s*[:：)-]?\s*/, '').slice(0, 60))
+    .slice(0, weekCount);
+  if (krs.length === 0) throw new Error('쓸 만한 지표 제안이 안 나왔어요. 다시 시도해주세요.');
+  return { krs, weeks, engine: engine === 'ollama' ? `로컬 AI(${model})` : `Groq(${model})` };
+}
+
+// 계열화 제안: 위저드 검토 단계에서 호출 — 같은 영역의 최상위 활성 목표 중 대목표 후보를 AI가 고른다.
+// 2단 트리로 제한(소목표 아래 또 소목표 금지) — 후보는 parent_id 없는 목표만.
+export async function suggestParentGoal(payload: {
+  title: string;
+  areaId: string;
+  dueDate: string | null;
+}) {
+  const { suggestParent } = await import('./goal-link');
+  const { data, error } = await db()
+    .from('objectives').select('id,title,due_date')
+    .eq('area_id', payload.areaId).eq('status', 'active').is('parent_id', null)
+    .order('created_at').limit(10);
+  if (error) throw new Error(`대목표 후보 조회 실패: ${error.message}`);
+  return suggestParent(
+    { title: payload.title, dueDate: payload.dueDate },
+    (data ?? []).map((o) => ({ id: o.id, title: o.title, dueDate: o.due_date })),
+  );
+}
+
 // v4 목표 생성 위저드 확정: Objective + KR들 + 주별 계획을 한 번에 저장
+// parentId가 오면 소목표로 연결하고 대목표의 "소목표 달성" 지표를 자동 생성·갱신 (계열화)
 export async function createGoalPlan(payload: {
   areaId: string;
   title: string;
   dueDate: string | null;
   krs: { title: string; target: number; unit: string }[];
   weeks: { weekOf: string; title: string }[];
+  parentId?: string | null;
 }) {
   if (!payload.title.trim()) throw new Error('목표 제목이 비어 있습니다');
   const { data: obj, error } = await db()
@@ -263,10 +358,15 @@ export async function createGoalPlan(payload: {
       title: payload.title.trim().slice(0, 200),
       period: kstQuarter(),
       due_date: payload.dueDate,
+      parent_id: payload.parentId ?? null,
     })
     .select('id')
     .single();
   if (error || !obj) throw new Error(`목표 생성 실패: ${error?.message}`);
+  if (payload.parentId) {
+    const { ensureGoalAggKR } = await import('./goal-link');
+    await ensureGoalAggKR(payload.parentId).catch((e) => console.error('[goal-rollup]', e));
+  }
 
   const krRows = payload.krs
     .filter((k) => k.title.trim() && Number.isFinite(k.target) && k.target > 0)

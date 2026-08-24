@@ -48,8 +48,29 @@ export async function syncAutoKRs(): Promise<{ updated: number; unchanged: numbe
   let unchanged = 0;
   let skipped = 0;
   for (const kr of (data ?? []) as Array<KeyResult & { objectives: { period: string; status: string } }>) {
-    if (kr.objectives.status !== 'active' || !kr.source_ref) {
+    // goal_agg는 source_ref 불필요(자기 objective의 자식을 센다), 나머지 자동형은 source_ref 필수
+    if (kr.objectives.status !== 'active' || (kr.source !== 'goal_agg' && !kr.source_ref)) {
       skipped += 1;
+      continue;
+    }
+    // 소목표 집계: 완료 자식 수 → 현재값, 전체 자식 수 → 목표값(함께 갱신)
+    if (kr.source === 'goal_agg') {
+      const { data: children, error: chErr } = await db()
+        .from('objectives').select('id,status').eq('parent_id', kr.objective_id);
+      if (chErr) {
+        skipped += 1;
+        continue;
+      }
+      const total = (children ?? []).length;
+      const done = (children ?? []).filter((c) => c.status === 'done').length;
+      if (total === Number(kr.target_value) && done === Number(kr.current_value)) {
+        unchanged += 1;
+        continue;
+      }
+      const { error: upErr } = await db()
+        .from('key_results').update({ target_value: Math.max(1, total), current_value: done }).eq('id', kr.id);
+      if (upErr) skipped += 1;
+      else updated += 1;
       continue;
     }
     let value: number | null = null;
@@ -61,7 +82,7 @@ export async function syncAutoKRs(): Promise<{ updated: number; unchanged: numbe
       const { count, error: cntErr } = await q;
       value = cntErr ? null : (count ?? 0);
     } else if (kr.source === 'api') {
-      value = await apiConnectorValue(kr.source_ref);
+      value = await apiConnectorValue(kr.source_ref ?? '');
     }
     if (value == null) {
       skipped += 1;
