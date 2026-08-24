@@ -152,7 +152,20 @@ export async function toggleTask(form: FormData) {
   await run('할일 체크', () =>
     db().from('daily_tasks').update({ done, done_at: done ? new Date().toISOString() : null }).eq('id', id),
   );
+  if (done) {
+    // 체크 = 자동 로그 (만능 원자 원칙 — 실패해도 체크는 유지)
+    const { data } = await db().from('daily_tasks').select('title,area_id,initiative_id').eq('id', id).maybeSingle();
+    let objectiveId: string | null = null;
+    if (data?.initiative_id) {
+      const { data: ini } = await db().from('initiatives').select('objective_id').eq('id', data.initiative_id).maybeSingle();
+      objectiveId = ini?.objective_id ?? null;
+    }
+    await db().from('session_logs').insert({
+      task_id: id, objective_id: objectiveId, area_id: data?.area_id ?? null, kind: 'check', note: data?.title ?? null,
+    });
+  }
   revalidatePath('/');
+  revalidatePath('/calendar');
 }
 
 // ── 습관 ──
@@ -215,6 +228,15 @@ export async function deleteEvent(form: FormData) {
   revalidatePath('/calendar');
 }
 
+// D-day 보드 핀: 달력 일정에 📌 → 홈 카운트다운 등재/해제
+export async function togglePinEvent(form: FormData) {
+  const id = must(form.get('id'), '일정');
+  const pinned = form.get('pinned') === 'true';
+  await run('핀 변경', () => db().from('calendar_events').update({ pinned }).eq('id', id));
+  revalidatePath('/calendar');
+  revalidatePath('/');
+}
+
 export async function syncCalendarNow() {
   const { syncCalendar } = await import('./google-calendar');
   const result = await syncCalendar(true);
@@ -269,12 +291,22 @@ export async function suggestGoalPlan(payload: {
   title: string;
   areaName: string;
   weekCount: number;
+  /** 사용자가 이미 고른 지표 — 주별 계획이 이 지표들을 향해 쓰이도록 프롬프트에 먹인다. */
+  krs?: { title: string; target: number; unit: string }[];
 }): Promise<GoalSuggestion> {
   const { chatCompleteJson } = await import('./llm');
   const title = payload.title.trim().slice(0, 200);
   if (!title) throw new Error('목표 제목이 비어 있습니다');
   const weekCount = Math.min(12, Math.max(1, Math.floor(payload.weekCount) || 6));
   const areaName = payload.areaName.trim().slice(0, 50);
+  const chosenKrs = (payload.krs ?? [])
+    .filter((k) => k.title.trim() && Number.isFinite(k.target) && k.target > 0)
+    .slice(0, 5)
+    .map((k) => `${k.title.trim().slice(0, 30)} ${k.target}${k.unit.trim().slice(0, 6)}`);
+  const krLine = chosenKrs.length > 0 ? `\n확정된 지표: ${chosenKrs.join(', ')}` : '';
+  const weeksRule = chosenKrs.length > 0
+    ? 'weeks는 정확히 요청된 주 수만큼, 각 한 줄 25자 이내 — 반드시 확정된 지표의 숫자를 주 단위로 쪼개 구체적으로(예: "주 15km + 인터벌 1회"). 뻔한 일반론 금지.'
+    : 'weeks는 정확히 요청된 주 수만큼, 각 한 줄 25자 이내, 앞 주는 준비·뒷 주는 마무리 흐름으로.';
 
   const { content, engine, model } = await chatCompleteJson([
     {
@@ -282,11 +314,11 @@ export async function suggestGoalPlan(payload: {
       content:
         '너는 개인 목표 설계 코치다. 반드시 JSON 객체 하나만 출력한다. 다른 텍스트 금지. ' +
         '형식: {"krs":[{"title":"지표 이름(명사형, 15자 이내)","target":숫자,"unit":"단위(회/개/km/점 등 3자 이내)"}],"weeks":["1주차 계획 한 줄", ...]}. ' +
-        'krs는 정확히 2~3개 — 숫자로 셀 수 있는 것만. weeks는 정확히 요청된 주 수만큼, 각 한 줄 25자 이내, 앞 주는 준비·뒷 주는 마무리 흐름으로.',
+        `krs는 정확히 2~3개 — 숫자로 셀 수 있는 것만. ${weeksRule}`,
     },
     {
       role: 'user',
-      content: `목표: "${title}"\n영역: ${areaName || '일반'}\n기간: ${weekCount}주\n이 목표의 달성 판단 지표(krs)와 ${weekCount}주 주별 계획(weeks)을 JSON으로.`,
+      content: `목표: "${title}"\n영역: ${areaName || '일반'}\n기간: ${weekCount}주${krLine}\n이 목표의 달성 판단 지표(krs)와 ${weekCount}주 주별 계획(weeks)을 JSON으로.`,
     },
   ]);
 
@@ -304,7 +336,8 @@ export async function suggestGoalPlan(payload: {
   const krs = (Array.isArray(obj.krs) ? obj.krs : [])
     .map((k) => {
       const r = (typeof k === 'object' && k !== null ? k : {}) as Record<string, unknown>;
-      const target = Number(r.target);
+      // 모델이 "30km"처럼 단위를 섞어 반환하기도 한다 — 숫자만 관대하게 추출
+      const target = Number(String(r.target ?? '').match(/\d+(?:\.\d+)?/)?.[0]);
       return {
         title: String(r.title ?? '').trim().slice(0, 30),
         target: Number.isFinite(target) && target > 0 ? target : 0,
@@ -315,9 +348,10 @@ export async function suggestGoalPlan(payload: {
     .slice(0, 3);
   const weeks = (Array.isArray(obj.weeks) ? obj.weeks : [])
     // UI가 이미 "N주" 라벨을 붙이므로 모델이 넣은 "1주차:" 접두어는 중복 — 제거
-    .map((w) => String(w ?? '').trim().replace(/^\d+\s*주차?\s*[:：)-]?\s*/, '').slice(0, 60))
+    .map((w) => String(w ?? '').trim().replace(/^(\d+\s*주차?|주\s*\d+)\s*[:：)-]?\s*/, '').slice(0, 60))
     .slice(0, weekCount);
-  if (krs.length === 0) throw new Error('쓸 만한 지표 제안이 안 나왔어요. 다시 시도해주세요.');
+  // 지표·주별 계획 중 하나라도 건졌으면 성공 — 유령 초안(주별만 쓰는 쪽)이 지표 파싱 실패에 볼모 잡히지 않게.
+  if (krs.length === 0 && weeks.length === 0) throw new Error('쓸 만한 제안이 안 나왔어요. 다시 시도해주세요.');
   return { krs, weeks, engine: engine === 'ollama' ? `로컬 AI(${model})` : `Groq(${model})` };
 }
 

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { createEvent, deleteEvent, sendJobCommand, syncCalendarNow } from '@/lib/actions';
+import { createEvent, deleteEvent, sendJobCommand, syncCalendarNow, togglePinEvent } from '@/lib/actions';
 import type { CalendarEvent, JobPosting } from '@/lib/types';
 
 export type GoalLite = {
@@ -242,6 +242,19 @@ export default function CalendarView({
                     <div className="flex items-center gap-3 px-4 py-[13px]">
                       <span className="mono w-11 text-xs" style={{ color: 'var(--ink-3)' }}>{e.all_day ? '종일' : fmtTime(e.starts_at)}</span>
                       <span className="flex-1 text-[15px] leading-normal">{e.title}</span>
+                      {/* 📌 = 홈 D-day 보드 등재 */}
+                      <form action={togglePinEvent}>
+                        <input type="hidden" name="id" value={e.id} />
+                        <input type="hidden" name="pinned" value={e.pinned ? 'false' : 'true'} />
+                        <button
+                          type="submit"
+                          aria-label={e.pinned ? 'D-day 핀 해제' : 'D-day 보드에 핀'}
+                          title={e.pinned ? 'D-day 핀 해제' : 'D-day 보드에 핀'}
+                          className={`text-xs ${e.pinned ? '' : 'opacity-30 hover:opacity-100'}`}
+                        >
+                          📌
+                        </button>
+                      </form>
                       {e.source === 'google' && <span className="mono text-[10px]" style={{ color: 'var(--ink-4)' }}>G</span>}
                       {e.source === 'app' && (
                         <form action={deleteEvent}>

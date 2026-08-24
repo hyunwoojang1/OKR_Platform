@@ -12,7 +12,20 @@ export type Milestone = {
 export type KeyResult = {
   id: string; objective_id: string; title: string; target_value: number; current_value: number;
   unit: string; source: 'manual' | 'habit_agg' | 'api' | 'log_agg' | 'goal_agg'; source_ref: string | null;
+  /** 시작값 — target보다 크면 줄이기형(체중 75→70). 진행률=(현재-시작)/(목표-시작) */
+  start_value: number;
+  /** total=기간 누적/도달, weekly=매주 반복(current_value=이번 주 실적) */
+  cadence: 'total' | 'weekly';
 };
+
+/** 지표 진행률(0~100). 시작값(줄이기 포함)·주기형을 모두 처리하는 단일 공식 — 모든 화면이 이걸 쓴다. */
+export function krPct(kr: Pick<KeyResult, 'start_value' | 'target_value' | 'current_value' | 'cadence'>): number {
+  const start = kr.cadence === 'weekly' ? 0 : (kr.start_value ?? 0);
+  const span = kr.target_value - start;
+  if (span === 0) return 100;
+  const raw = ((kr.current_value - start) / span) * 100;
+  return Math.max(0, Math.min(100, Math.round(raw)));
+}
 export type Initiative = {
   id: string; milestone_id: string | null; objective_id: string | null; area_id: string | null;
   title: string; week_of: string;
@@ -35,7 +48,7 @@ export type Habit = {
 export type HabitLog = { id: string; habit_id: string; date: string; done: boolean };
 export type CalendarEvent = {
   id: string; google_event_id: string | null; title: string; starts_at: string; ends_at: string | null;
-  all_day: boolean; source: 'app' | 'google'; sync_status: string;
+  all_day: boolean; source: 'app' | 'google'; sync_status: string; pinned: boolean;
 };
 export type DailyReview = { id: string; date: string; note: string | null; checked_count: number };
 export type JobPosting = {
