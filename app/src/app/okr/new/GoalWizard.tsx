@@ -6,7 +6,17 @@ import { createGoalPlan, suggestGoalPlan } from '@/lib/actions';
 import type { Area } from '@/lib/types';
 import { kstToday } from '@/lib/types';
 
-type KRDraft = { title: string; target: string; unit: string };
+// start: 시작값(선택) — 목표보다 크면 줄이기형(체중 75→70). cadence: 매주 반복형 여부.
+type KRDraft = { title: string; target: string; unit: string; start?: string; cadence?: 'total' | 'weekly' };
+
+// 지표를 사람 문장으로 — 검토·확인 문구가 전부 이걸 쓴다.
+function krSentence(k: KRDraft): string {
+  const startNum = Number(k.start ?? '');
+  const hasStart = !!k.start?.trim() && Number.isFinite(startNum) && startNum !== Number(k.target);
+  if (k.cadence === 'weekly') return `매주 ${k.title.trim()} ${k.target}${k.unit}`;
+  if (hasStart) return `${k.title.trim()} ${k.start}${k.unit} → ${k.target}${k.unit}`;
+  return `${k.title.trim()} ${k.target}${k.unit}`;
+}
 type UpcomingEvent = { title: string; date: string };
 
 const WEEK_OPTIONS = [4, 6, 8];
@@ -71,8 +81,8 @@ const TITLE_KR_SUGGESTIONS: { match: RegExp; items: KRDraft[] }[] = [
     match: /러닝|달리기|마라톤|조깅/,
     items: [
       { title: '주간 러닝 거리', target: '30', unit: 'km' },
-      { title: '5km 페이스', target: '6', unit: '분' },
-      { title: '주 러닝 횟수', target: '3', unit: '회' },
+      { title: '5km 페이스', target: '6', unit: '분', start: '7' },
+      { title: '러닝', target: '3', unit: '회', cadence: 'weekly' },
       { title: '최장 거리', target: '10', unit: 'km' },
     ],
   },
@@ -88,8 +98,8 @@ const TITLE_KR_SUGGESTIONS: { match: RegExp; items: KRDraft[] }[] = [
   {
     match: /다이어트|감량|체중|몸무게/,
     items: [
-      { title: '체중 감량', target: '5', unit: 'kg' },
-      { title: '주 운동 횟수', target: '4', unit: '회' },
+      { title: '체중', target: '70', unit: 'kg', start: '75' },
+      { title: '운동', target: '4', unit: '회', cadence: 'weekly' },
       { title: '식단 기록', target: '30', unit: '일' },
     ],
   },
@@ -280,7 +290,13 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
   function chosenKrsPayload() {
     return krs
       .filter((k) => k.title.trim() && Number(k.target) > 0)
-      .map((k) => ({ title: k.title, target: Number(k.target), unit: k.unit }));
+      .map((k) => ({
+        title: k.title,
+        target: Number(k.target),
+        unit: k.unit,
+        start: Number(k.start ?? '') > 0 ? Number(k.start) : undefined,
+        cadence: k.cadence ?? 'total',
+      }));
   }
 
   function requestAiDraft() {
@@ -365,7 +381,13 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
           areaId,
           title,
           dueDate,
-          krs: krs.map((k) => ({ title: k.title, target: Number(k.target), unit: k.unit })),
+          krs: krs.map((k) => ({
+            title: k.title,
+            target: Number(k.target),
+            unit: k.unit,
+            start: Number(k.start ?? '') > 0 ? Number(k.start) : undefined,
+            cadence: k.cadence ?? 'total',
+          })),
           weeks: weeks.map((w, i) => ({ weekOf: kstMondayPlus(i), title: w })),
         });
         router.push(`/okr/${id}`);
@@ -541,7 +563,7 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
                           : { color: 'var(--ink-2)' }
                       }
                     >
-                      {on ? '✓ ' : ''}{s.title} {s.target}{s.unit}
+                      {on ? '✓ ' : ''}{krSentence(s)}
                     </button>
                   );
                 })}
@@ -570,7 +592,7 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
                   </div>
                   <div className="divider" />
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[13px]" style={{ color: 'var(--ink-3)' }}>얼마나?</span>
+                    <span className="text-[13px]" style={{ color: 'var(--ink-3)' }}>{k.cadence === 'weekly' ? '매주 몇 번?' : '얼마나?'}</span>
                     <input
                       value={k.target}
                       onChange={(e) => {
@@ -601,9 +623,40 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
                       })}
                     </div>
                   </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {k.cadence !== 'weekly' && (
+                      <>
+                        <span className="text-[13px]" style={{ color: 'var(--ink-3)' }}>지금은?</span>
+                        <input
+                          value={k.start ?? ''}
+                          onChange={(e) => {
+                            const { num, unit } = splitNumberAndUnit(e.target.value);
+                            updateKr(i, { start: num, ...(unit && !k.unit ? { unit } : {}) });
+                          }}
+                          placeholder="0"
+                          inputMode="decimal"
+                          className="mono w-[72px] text-center !py-1.5"
+                        />
+                      </>
+                    )}
+                    <button
+                      onClick={() => updateKr(i, { cadence: k.cadence === 'weekly' ? 'total' : 'weekly', ...(k.cadence !== 'weekly' ? { start: '' } : {}) })}
+                      className="chip pressable !px-2.5 !py-1 !text-[12px]"
+                      style={
+                        k.cadence === 'weekly'
+                          ? { border: '1.5px solid var(--accent)', background: 'var(--accent-bg-soft)', color: 'var(--accent-deep)', fontWeight: 500 }
+                          : { color: 'var(--ink-3)' }
+                      }
+                    >
+                      {k.cadence === 'weekly' ? '✓ 매주 반복' : '매주 반복'}
+                    </button>
+                    {k.cadence !== 'weekly' && Number(k.start ?? '') > Number(k.target) && Number(k.target) > 0 && (
+                      <span className="text-[12px]" style={{ color: 'var(--ink-3)' }}>줄이는 목표네요</span>
+                    )}
+                  </div>
                   {k.title.trim() && Number(k.target) > 0 && (
                     <div className="text-[13px]" style={{ color: 'var(--accent-deep)' }}>
-                      ✓ “{k.title.trim()} {k.target}{k.unit}” — 이걸로 진행률을 재요.
+                      ✓ “{krSentence(k)}” — 이걸로 진행률을 재요.
                     </div>
                   )}
                 </div>
@@ -710,7 +763,13 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
                       {i > 0 && <div className="divider mx-4" />}
                       <div className="flex items-center justify-between px-4 py-[15px]">
                         <span className="text-[15px]">{k.title}</span>
-                        <span className="mono text-[13px]" style={{ color: 'var(--ink-2)' }}>{k.target}{k.unit}</span>
+                        <span className="mono text-[13px]" style={{ color: 'var(--ink-2)' }}>
+                          {k.cadence === 'weekly'
+                            ? `매주 ${k.target}${k.unit}`
+                            : Number(k.start ?? '') > 0 && Number(k.start) !== Number(k.target)
+                              ? `${k.start} → ${k.target}${k.unit}`
+                              : `${k.target}${k.unit}`}
+                        </span>
                       </div>
                     </div>
                   ))}

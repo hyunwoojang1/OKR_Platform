@@ -27,7 +27,7 @@ export default async function OkrPage() {
   const today = kstToday();
 
   return (
-    <main className="mx-auto max-w-2xl space-y-5">
+    <main className="mx-auto max-w-5xl space-y-5">
       <header className="flex items-center justify-between">
         <h1 className="t-large">목표</h1>
         <Link
@@ -40,6 +40,7 @@ export default async function OkrPage() {
         </Link>
       </header>
 
+      <div className="grid gap-4 md:grid-cols-2">
       {objectives.map((obj) => {
         const objKrs = krs.filter((k) => k.objective_id === obj.id);
         const pct = objKrs.length
@@ -94,6 +95,7 @@ export default async function OkrPage() {
           </Link>
         );
       })}
+      </div>
 
       <Link href="/okr/new" className="block">
         <section

@@ -123,8 +123,8 @@ export default function CalendarView({
   const goalTitleById = new Map(goals.map((g) => [g.id, g.title]));
 
   return (
-    <main className="mx-auto max-w-6xl">
-      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_340px]">
+    <main className="w-full">
+      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_380px]">
         {/* ── 왼쪽: 달력 + 선택일 ── */}
         <div className="space-y-5">
           <header className="flex items-center justify-between">

@@ -1,5 +1,5 @@
 import { db } from './db';
-import { kstToday, kstMonday } from './types';
+import { kstToday, kstMonday, krPct } from './types';
 import type { DailyTask, Habit, HabitLog, CalendarEvent, Initiative, KeyResult, Objective, Area, JobPosting } from './types';
 
 // ── 자동 이월: 어제까지의 미완료 할일을 오늘로 옮기고 carried_over +1 ──
@@ -40,7 +40,8 @@ function laggingKRs(krs: KeyResult[], objectives: Objective[], today: string): A
   const out: Array<{ kr: KeyResult; objTitle: string; gap: number }> = [];
   for (const kr of krs) {
     if (kr.target_value <= 0) continue;
-    const progress = kr.current_value / kr.target_value;
+    if (kr.cadence === 'weekly') continue; // 매주형은 분기 경과율 비교 대상이 아니다
+    const progress = krPct(kr) / 100;
     const gap = elapsed - progress;
     if (gap > 0.15) {
       const obj = objectives.find((o) => o.id === kr.objective_id);
@@ -112,7 +113,7 @@ export async function buildMorningBriefing(): Promise<MorningBriefing> {
     lines.push('오늘 할일이 비었어요 — 이번 주 이니셔티브에서 골라보세요');
   }
   if (habitsDue.length) lines.push(`🔥 습관 ${habitsDue.map((h) => h.title).join(', ')}`);
-  for (const l of lagging) lines.push(`⚠️ "${l.kr.title}" 진척 ${Math.round((l.kr.current_value / l.kr.target_value) * 100)}% — 분기 페이스보다 뒤처짐`);
+  for (const l of lagging) lines.push(`⚠️ "${l.kr.title}" 진척 ${krPct(l.kr)}% — 분기 페이스보다 뒤처짐`);
 
   return {
     date: today,
@@ -124,7 +125,7 @@ export async function buildMorningBriefing(): Promise<MorningBriefing> {
     habits: habitsDue.map((h) => ({ title: h.title })),
     events,
     jobsDue: jobsDue.map((j) => ({ company: j.company, title: j.title, stage: j.stage })),
-    lagging: lagging.map((l) => ({ title: l.kr.title, objTitle: l.objTitle, pct: Math.round((l.kr.current_value / l.kr.target_value) * 100) })),
+    lagging: lagging.map((l) => ({ title: l.kr.title, objTitle: l.objTitle, pct: krPct(l.kr) })),
     pushBody: lines.join('\n') || '오늘 계획이 비어 있어요. 앱에서 하루를 설계해보세요 ✨',
   };
 }

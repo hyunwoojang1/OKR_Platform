@@ -30,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-dvh antialiased">
         <Nav />
-        <div className="mx-auto max-w-6xl px-5 pb-28 pt-4 md:px-6 md:pb-12">{children}</div>
+        <div className="mx-auto max-w-[1440px] px-5 pb-28 pt-4 md:px-8 md:pb-12">{children}</div>
         <script
           dangerouslySetInnerHTML={{
             __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(function(e){console.warn('SW 등록 실패',e)})}`,

@@ -292,7 +292,7 @@ export async function suggestGoalPlan(payload: {
   areaName: string;
   weekCount: number;
   /** 사용자가 이미 고른 지표 — 주별 계획이 이 지표들을 향해 쓰이도록 프롬프트에 먹인다. */
-  krs?: { title: string; target: number; unit: string }[];
+  krs?: { title: string; target: number; unit: string; start?: number; cadence?: 'total' | 'weekly' }[];
 }): Promise<GoalSuggestion> {
   const { chatCompleteJson } = await import('./llm');
   const title = payload.title.trim().slice(0, 200);
@@ -302,7 +302,15 @@ export async function suggestGoalPlan(payload: {
   const chosenKrs = (payload.krs ?? [])
     .filter((k) => k.title.trim() && Number.isFinite(k.target) && k.target > 0)
     .slice(0, 5)
-    .map((k) => `${k.title.trim().slice(0, 30)} ${k.target}${k.unit.trim().slice(0, 6)}`);
+    .map((k) => {
+      const name = k.title.trim().slice(0, 30);
+      const unit = k.unit.trim().slice(0, 6);
+      if (k.cadence === 'weekly') return `${name} 매주 ${k.target}${unit}`;
+      if (typeof k.start === 'number' && k.start > 0 && k.start !== k.target) {
+        return `${name} ${k.start}${unit} → ${k.target}${unit}`; // 시작→목표 (줄이기 포함)
+      }
+      return `${name} ${k.target}${unit}`;
+    });
   const krLine = chosenKrs.length > 0 ? `\n확정된 지표: ${chosenKrs.join(', ')}` : '';
   const weeksRule = chosenKrs.length > 0
     ? 'weeks는 정확히 요청된 주 수만큼, 각 한 줄 25자 이내 — 반드시 확정된 지표의 숫자를 주 단위로 쪼개 구체적으로(예: "주 15km + 인터벌 1회"). 뻔한 일반론 금지.'
@@ -380,7 +388,7 @@ export async function createGoalPlan(payload: {
   areaId: string;
   title: string;
   dueDate: string | null;
-  krs: { title: string; target: number; unit: string }[];
+  krs: { title: string; target: number; unit: string; start?: number; cadence?: 'total' | 'weekly' }[];
   weeks: { weekOf: string; title: string }[];
   parentId?: string | null;
 }) {
@@ -404,13 +412,21 @@ export async function createGoalPlan(payload: {
 
   const krRows = payload.krs
     .filter((k) => k.title.trim() && Number.isFinite(k.target) && k.target > 0)
-    .map((k) => ({
-      objective_id: obj.id,
-      title: k.title.trim().slice(0, 200),
-      target_value: k.target,
-      unit: k.unit.trim().slice(0, 20),
-      source: 'manual' as const,
-    }));
+    .map((k) => {
+      const cadence = k.cadence === 'weekly' ? 'weekly' : 'total';
+      const start = cadence === 'total' && Number.isFinite(k.start) && (k.start as number) >= 0 ? (k.start as number) : 0;
+      return {
+        objective_id: obj.id,
+        title: k.title.trim().slice(0, 200),
+        target_value: k.target,
+        unit: k.unit.trim().slice(0, 20),
+        source: 'manual' as const,
+        start_value: start,
+        // 시작값이 있으면 현재값도 거기서 출발 — 진행률 (현재-시작)/(목표-시작)이 0%부터 시작하게
+        current_value: start,
+        cadence,
+      };
+    });
   if (krRows.length > 0) {
     const { error: krErr } = await db().from('key_results').insert(krRows);
     if (krErr) throw new Error(`지표 생성 실패: ${krErr.message}`);
