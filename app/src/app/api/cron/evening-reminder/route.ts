@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     const push = await sendPushToAll({
       title: '하루 마감 시간 🌙',
       body: status.pushBody,
-      url: '/close',
+      url: '/',
       tag: 'evening',
     });
     return NextResponse.json({ ok: true, ...status, push });

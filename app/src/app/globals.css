@@ -1,89 +1,108 @@
 @import "tailwindcss";
 
-/* ───────── 디자인 토큰 v3: 딥 네이비 대시보드 (레퍼런스 = econ-dashboard·auction) ─────────
-   방향(2026-08-18, 사용자 확정): Amie 웜미니멀 폐기 → econ 계열 딥 네이비 다크 + 밀도.
-   3단 서피스(bg→raised→sunken) 톤차로 깊이, 영역 컬러는 바·링·칩·텍스트에만(통칠 금지),
-   골드는 스트릭·주목 배지 전용. 모바일=하단 블러 탭바, 데스크톱=상단 네비 대시보드. */
+/* ───────── 디자인 토큰 v4: 종이톤 라이트 + 세이지 (클로드 디자인 「목표 허브 v4」 2026-08-24) ─────────
+   무드 = 차분한 통제감: 응원하지 않는다, 상황이 파악된 상태로 보여준다.
+   라이트 고정. 종이 톤 배경 + 흰 카드, 액센트는 세이지 그린 하나, 마감 경고(주황)만 예외.
+   문장은 IBM Plex Sans KR, 날짜·수치·기록은 IBM Plex Mono("기록장" 감각).
+   모션은 체크할 때만 — 전환 120ms 페이드, 그 외 스스로 움직이지 않는다. */
 :root {
-  color-scheme: dark;
-  --surface: oklch(16% 0.022 264);          /* 페이지 — 딥 네이비 */
-  --card: oklch(22.5% 0.027 264);           /* 카드 raised */
-  --card-2: oklch(25.5% 0.03 264);          /* hover/inset/입력 배경 */
+  color-scheme: light;
+  --paper: oklch(0.98 0.006 70);            /* 페이지 — 종이 */
+  --surface: #ffffff;                       /* 카드 */
+  --line: #e9e5db;                          /* 카드 테두리 */
+  --line-soft: #f1eee6;                     /* 카드 안 구분선 */
+  --line-strong: #e4e0d6;                   /* 외곽·대시 */
 
-  --ink: oklch(93% 0.01 264);
-  --ink-soft: oklch(72% 0.016 264);
-  --ink-faint: oklch(60% 0.02 264);
+  --ink: #23211d;
+  --ink-2: #6b675e;
+  --ink-3: #7f7a6e;
+  --ink-4: #b5b0a4;                         /* 플레이스홀더 */
 
-  --line: oklch(100% 0 0 / 0.09);           /* hairline */
-  --line-strong: oklch(100% 0 0 / 0.17);
+  --accent: oklch(0.55 0.13 150);           /* 세이지 그린 */
+  --accent-deep: oklch(0.45 0.11 150);
+  --accent-bg: oklch(0.94 0.035 150);
+  --accent-bg-soft: oklch(0.97 0.02 150);
+  --urgent: oklch(0.6 0.16 40);             /* 마감 경고 전용 */
+  --urgent-line: oklch(0.85 0.08 40);
 
-  --accent: oklch(64% 0.175 260);           /* ≈#4D7CFE 절제 사용 */
-  --accent-soft: oklch(32% 0.075 262);
-  --gold: oklch(80% 0.145 78);              /* 스트릭·주목 */
-  --gold-soft: oklch(33% 0.07 78);
-  --up: oklch(78% 0.16 158);
-  --up-soft: oklch(30% 0.07 158);
-  --down: oklch(70% 0.17 22);
-  --down-soft: oklch(32% 0.09 22);
-  --warn: oklch(81% 0.14 78);
+  --radius-sm: 12px;
+  --radius: 16px;
+  --radius-lg: 24px;
+  --shadow-card: 0 8px 28px rgba(35, 33, 29, 0.06);
+  --shadow-float: 0 2px 10px rgba(35, 33, 29, 0.05);
 
-  --radius: 14px;
-  --radius-sm: 9px;
-  --shadow-card: 0 0 0 1px oklch(100% 0 0 / 0.09), 0 10px 28px -20px oklch(0% 0 0 / 0.6);
-  --shadow-raised: 0 2px 6px oklch(0% 0 0 / 0.4), 0 24px 48px -24px oklch(0% 0 0 / 0.65);
-  --tabbar-bg: oklch(18% 0.024 264 / 0.82);
+  /* 구버전 호환 별칭 (홈·설정이 아직 참조) */
+  --card: var(--surface);
+  --card-2: var(--line-soft);
+  --ink-soft: var(--ink-2);
+  --ink-faint: var(--ink-3);
+  --accent-soft: var(--accent-bg);
+  --gold: var(--urgent);
+  --gold-soft: oklch(0.95 0.04 70);
+  --up: var(--accent);
+  --up-soft: var(--accent-bg);
+  --down: var(--urgent);
+  --down-soft: oklch(0.95 0.05 40);
+  --warn: var(--urgent);
+  --tabbar-bg: rgba(255, 255, 255, 0.92);
 }
 
 /* ── 네이티브 셸 ── */
 html {
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: contain;
-  font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", sans-serif;
+  font-family: "IBM Plex Sans KR", -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", sans-serif;
 }
 body {
-  background: var(--surface);
+  background: var(--paper);
   color: var(--ink);
   font-size: 15px;
-  line-height: 1.45;
+  line-height: 1.5;
   letter-spacing: -0.011em;
-  font-feature-settings: "tnum";
+  -webkit-font-smoothing: antialiased;
 }
 button, a, summary, label, nav { -webkit-user-select: none; user-select: none; }
 button { cursor: pointer; }
 
-/* 타이포 */
-.t-large { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
-.t-title { font-size: 19px; font-weight: 700; letter-spacing: -0.017em; }
-.t-sub   { font-size: 13px; color: var(--ink-soft); }
-.t-cap   { font-size: 11px; color: var(--ink-faint); }
-/* econ식 섹션 라벨: 소형 대문자 느낌 */
-.sec-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--ink-faint);
-  text-transform: uppercase;
+/* 모노 — 날짜·수치·기록 라벨 */
+.mono {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.02em;
 }
 
-/* ── 카드 (hairline + 다크 그림자) ── */
+/* 타이포 */
+.t-large { font-size: 25px; font-weight: 500; letter-spacing: -0.02em; line-height: 1.3; }
+.t-title { font-size: 18px; font-weight: 500; letter-spacing: -0.01em; }
+.t-sub   { font-size: 13px; color: var(--ink-2); }
+.t-cap   { font-size: 12px; color: var(--ink-3); }
+.sec-label {
+  font-size: 13px;
+  color: var(--ink-3);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ── 카드 ── */
 .tile {
-  background: var(--card);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 14px 16px;
-  box-shadow: var(--shadow-card);
+  padding: 16px 18px;
 }
 .tile-title {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: var(--ink-faint);
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink-3);
   margin-bottom: 10px;
 }
 .pressable { transition: transform 0.12s ease; }
 .pressable:active { transform: scale(0.98); }
 
-/* ── KPI 밴드 (econ 「오늘의 시장」식) ── */
+/* 카드 안 구분선 */
+.divider { height: 1px; background: var(--line-soft); }
+
+/* ── KPI 밴드 (홈 구버전 호환 — v4 재설계 전까지 라이트 톤) ── */
 .kpi-band {
   display: flex;
   overflow-x: auto;
@@ -94,77 +113,70 @@ button { cursor: pointer; }
   scrollbar-width: none;
 }
 .kpi-band::-webkit-scrollbar { display: none; }
-.kpi {
-  flex: 1;
-  min-width: 96px;
-  padding: 0 16px;
-  border-left: 1px solid var(--line);
-}
+.kpi { flex: 1; min-width: 96px; padding: 0 16px; border-left: 1px solid var(--line); }
 .kpi:first-child { border-left: none; padding-left: 4px; }
-.kpi-label { font-size: 11px; font-weight: 600; color: var(--ink-faint); letter-spacing: 0.04em; }
-.kpi-value { font-size: 21px; font-weight: 800; letter-spacing: -0.01em; margin-top: 2px; }
-.kpi-delta { font-size: 11.5px; font-weight: 700; margin-top: 1px; }
+.kpi-label { font-size: 11px; color: var(--ink-3); }
+.kpi-value { font-size: 20px; font-weight: 500; margin-top: 2px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+.kpi-delta { font-size: 11.5px; margin-top: 1px; }
 
 /* ── 리스트 행 ── */
 .row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 10px;
+  gap: 12px;
+  padding: 10px 10px;
   border-radius: var(--radius-sm);
   position: relative;
   transition: background 0.12s;
 }
-.row:hover { background: var(--card-2); }
-.row + .row { margin-top: 2px; }
-.row-bar { position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; border-radius: 3px; }
+.row:hover { background: var(--line-soft); }
+.row-bar { position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 3px; }
 
-/* 원형 체크 */
+/* 원형 체크 — 유일하게 움직이는 것 */
 .check {
   width: 22px; height: 22px; min-width: 22px;
   border-radius: 50%;
-  border: 2px solid var(--line-strong);
+  border: 1.5px solid var(--line-strong);
   display: flex; align-items: center; justify-content: center;
   color: transparent;
   font-size: 12px;
+  background: transparent;
   transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.15s, border-color 0.15s, color 0.15s;
 }
 .check:active { transform: scale(0.85); }
-.check.on { color: #fff; animation: check-pop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.check.on { background: var(--accent); border-color: var(--accent); color: #fff; animation: check-pop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.check.due { border-color: var(--accent); }
 @keyframes check-pop { 0% { transform: scale(0.7); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
-.check-lg { width: 36px; height: 36px; min-width: 36px; font-size: 15px; }
+.check-lg { width: 34px; height: 34px; min-width: 34px; font-size: 15px; }
 
-/* 진행바 (OKR 신호등용) */
-.bar-track { height: 5px; border-radius: 999px; background: var(--card-2); overflow: hidden; }
-.bar-fill { height: 100%; border-radius: 999px; transition: width 0.4s cubic-bezier(0.2, 0.8, 0.3, 1); }
+/* 진행바 */
+.bar-track { height: 4px; border-radius: 999px; background: #edeae2; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.4s cubic-bezier(0.2, 0.8, 0.3, 1); }
 
-@keyframes rise-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-.rise { animation: rise-in 0.3s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
-.rise:nth-child(2) { animation-delay: 0.04s; }
-.rise:nth-child(3) { animation-delay: 0.08s; }
-.rise:nth-child(4) { animation-delay: 0.12s; }
-.rise:nth-child(5) { animation-delay: 0.16s; }
+/* 전환 페이드 — 120ms, 그 이상 움직이지 않는다 */
+@keyframes rise-in { from { opacity: 0; } to { opacity: 1; } }
+.rise { animation: rise-in 0.12s ease both; }
 
 /* ── 입력 ── */
 input, select, textarea {
-  background: var(--card-2);
-  border: 1px solid var(--line);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
-  padding: 8px 11px;
+  padding: 9px 12px;
   font-size: 16px;
   color: var(--ink);
   transition: border-color 0.15s, box-shadow 0.15s;
   -webkit-appearance: none;
   appearance: none;
 }
-input::placeholder { color: var(--ink-faint); }
+input::placeholder, textarea::placeholder { color: var(--ink-4); }
 input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 30%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent);
 }
 select {
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23808699' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237F7A6E' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 9px center;
   padding-right: 28px;
@@ -173,20 +185,21 @@ input[type="color"] { padding: 3px; }
 input[type="checkbox"] { -webkit-appearance: checkbox; appearance: auto; }
 
 .btn {
-  border-radius: var(--radius-sm);
-  padding: 8px 14px;
-  font-size: 13.5px;
-  font-weight: 600;
-  background: var(--card-2);
-  color: var(--ink);
-  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 16px;
+  font-size: 15px;
+  font-weight: 500;
+  background: var(--surface);
+  color: var(--ink-2);
+  border: 1px solid var(--line-strong);
   white-space: nowrap;
   transition: transform 0.12s ease, background 0.12s, border-color 0.12s;
 }
-.btn:hover { border-color: var(--line-strong); }
+.btn:hover { border-color: var(--ink-4); }
 .btn:active { transform: scale(0.96); }
 .btn-primary { background: var(--accent); border-color: transparent; color: #fff; }
-.btn-ghost { background: transparent; border-color: transparent; color: var(--ink-soft); }
+.btn-dark { background: var(--ink); border-color: transparent; color: #fff; }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--ink-2); }
 
 /* ── 네비: 데스크톱 상단바 ── */
 .topnav {
@@ -194,20 +207,19 @@ input[type="checkbox"] { -webkit-appearance: checkbox; appearance: auto; }
   top: 0;
   z-index: 40;
   background: var(--tabbar-bg);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--line);
 }
 .topnav-link {
   padding: 7px 14px;
   border-radius: 999px;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--ink-soft);
-  transition: color 0.15s, background 0.15s;
+  font-size: 14px;
+  color: var(--ink-2);
+  transition: color 0.12s, background 0.12s;
 }
 .topnav-link:hover { color: var(--ink); }
-.topnav-link.active { background: var(--accent); color: #fff; }
+.topnav-link.active { background: var(--ink); color: #fff; }
 
 /* ── 네비: 모바일 하단 탭바 ── */
 .tabbar {
@@ -216,43 +228,44 @@ input[type="checkbox"] { -webkit-appearance: checkbox; appearance: auto; }
   bottom: 0;
   z-index: 40;
   background: var(--tabbar-bg);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
   border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
 }
 .tab {
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  padding: 8px 0 6px; flex: 1;
-  font-size: 10px; font-weight: 600;
-  color: var(--ink-faint);
-  transition: color 0.15s, transform 0.12s;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 9px 0 7px; flex: 1;
+  font-size: 11px;
+  color: var(--ink-3);
+  transition: color 0.12s, transform 0.12s;
 }
 .tab:active { transform: scale(0.92); }
-.tab.active { color: var(--ink); }
-.tab svg { width: 22px; height: 22px; }
+.tab.active { color: var(--ink); font-weight: 500; }
+.tab svg { width: 21px; height: 21px; }
 
 /* ── 바텀시트 ── */
 .sheet-backdrop {
   position: fixed; inset: 0; z-index: 60;
-  background: oklch(0% 0 0 / 0.5);
+  background: rgba(35, 33, 29, 0.32);
   opacity: 0; pointer-events: none;
-  transition: opacity 0.25s ease;
+  transition: opacity 0.2s ease;
 }
 .sheet {
   position: fixed; inset-inline: 0; bottom: 0; z-index: 61;
-  background: var(--card);
-  border-radius: 18px 18px 0 0;
-  box-shadow: var(--shadow-raised);
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -12px 40px rgba(35, 33, 29, 0.12);
   padding: 8px 20px calc(20px + env(safe-area-inset-bottom));
   transform: translateY(105%);
   visibility: hidden;
-  transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.3, 1), visibility 0s 0.32s;
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.3, 1), visibility 0s 0.28s;
   max-height: 85dvh; overflow-y: auto;
 }
 .sheet-open .sheet { visibility: visible; transition-delay: 0s; }
 @media (min-width: 768px) {
-  .sheet { inset-inline: auto; right: 32px; left: auto; width: 420px; border-radius: 18px; bottom: 24px; }
+  .sheet { inset-inline: auto; right: 32px; left: auto; width: 420px; border-radius: 20px; bottom: 24px; border: 1px solid var(--line); }
 }
 .sheet-open .sheet { transform: translateY(0); }
 .sheet-open .sheet-backdrop { opacity: 1; pointer-events: auto; }
@@ -264,15 +277,29 @@ input[type="checkbox"] { -webkit-appearance: checkbox; appearance: auto; }
 .chip {
   display: inline-flex; align-items: center; gap: 6px;
   border-radius: 999px;
-  background: var(--card-2);
-  border: 1px solid var(--line);
-  padding: 6px 11px;
-  font-size: 12.5px; font-weight: 500;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  padding: 6px 12px;
+  font-size: 12.5px;
 }
-/* 상태 배지 (econ 칩식) */
 .badge {
   display: inline-flex; align-items: center;
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 10.5px; font-weight: 700;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
 }
+.badge-accent { background: var(--accent-bg); color: var(--accent-deep); }
+.badge-urgent { color: var(--urgent); }
+
+/* 진행 링 (conic) — 목표 카드 */
+.ring { border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ring-inner {
+  border-radius: 50%; background: var(--surface);
+  display: flex; align-items: center; justify-content: center;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+/* 기록 타임라인 */
+.tl-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.tl-line { flex: 1; width: 1px; background: var(--line-strong); }

@@ -1,163 +1,115 @@
-import { getOkrTree, getHabitsWithLogs } from '@/lib/queries';
-import { createArea, createObjective, createKeyResult, createMilestone, createInitiative, updateKRProgress, setStatus, syncKRsNow } from '@/lib/actions';
-import { kstQuarter, kstMonth, kstMonday } from '@/lib/types';
+import Link from 'next/link';
+import { db } from '@/lib/db';
+import type { Area, Objective, KeyResult, Initiative } from '@/lib/types';
+import { kstToday, kstMonday } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
-// Weekdone식 4색 신호등: 진척률 → 색
-function signal(pct: number): string {
-  if (pct > 100) return '#3b82f6';
-  if (pct >= 66) return '#10b981';
-  if (pct >= 33) return '#f59e0b';
-  return '#ef4444';
-}
-
+// v4 목표 목록: 목표당 카드 하나 — 영역 라벨 + 제목 + 사람 문장 + 진행 링 + 다음 마감 한 줄.
+// OKR 용어는 UI에서 퇴출 (REDESIGN_PLAN).
 export default async function OkrPage() {
-  const [tree, { habits }] = await Promise.all([getOkrTree(), getHabitsWithLogs(1)]);
+  const [areasQ, objQ, krQ, iniQ, evQ] = await Promise.all([
+    db().from('areas').select('*').eq('archived', false),
+    db().from('objectives').select('*').eq('status', 'active').order('created_at'),
+    db().from('key_results').select('*'),
+    db().from('initiatives').select('*').eq('week_of', kstMonday()),
+    db().from('calendar_events').select('id').gte('starts_at', new Date().toISOString()).limit(100),
+  ]);
+  for (const q of [areasQ, objQ, krQ, iniQ, evQ]) {
+    if (q.error) throw new Error(`목표 조회 실패: ${q.error.message}`);
+  }
+  const areas = areasQ.data as Area[];
+  const objectives = objQ.data as Objective[];
+  const krs = krQ.data as KeyResult[];
+  const weekInis = iniQ.data as Initiative[];
+  const upcomingCount = (evQ.data ?? []).length;
+  const areaById = new Map(areas.map((a) => [a.id, a]));
+  const today = kstToday();
 
   return (
-    <main className="space-y-4">
-      <header className="flex items-baseline justify-between gap-2">
+    <main className="mx-auto max-w-2xl space-y-5">
+      <header className="flex items-center justify-between">
         <h1 className="t-large">목표</h1>
-        <form action={syncKRsNow}>
-          <button type="submit" className="text-xs opacity-50 hover:opacity-100" title="습관·연동 KR 지금 갱신">↻ 자동 KR 갱신</button>
-        </form>
-        <span className="text-sm opacity-60">{kstQuarter()}</span>
+        <Link
+          href="/okr/new"
+          aria-label="새 목표"
+          className="pressable flex h-9 w-9 items-center justify-center rounded-full text-xl font-light text-white"
+          style={{ background: 'var(--ink)' }}
+        >
+          +
+        </Link>
       </header>
 
-      <div className="grid gap-4 md:grid-cols-2">
-      {tree.areas.map((area) => {
-        const objectives = tree.objectives.filter((o) => o.area_id === area.id);
+      {objectives.map((obj) => {
+        const objKrs = krs.filter((k) => k.objective_id === obj.id);
+        const pct = objKrs.length
+          ? Math.round(
+              objKrs.reduce((s, k) => s + Math.min(100, (k.current_value / k.target_value) * 100), 0) / objKrs.length,
+            )
+          : 0;
+        const myWeek = weekInis.filter((i) => i.objective_id === obj.id);
+        const doneCount = myWeek.filter((i) => i.status === 'done').length;
+        const sentence =
+          myWeek.length > 0
+            ? `이번 주 ${myWeek.length}개 중 ${doneCount}개 했어요.`
+            : objKrs.length > 0
+              ? '이번 주 계획이 아직 없어요.'
+              : '지표를 정하면 진행이 보여요.';
+        const dday = obj.due_date
+          ? Math.ceil((new Date(`${obj.due_date}T00:00:00+09:00`).getTime() - new Date(`${today}T00:00:00+09:00`).getTime()) / 86400_000)
+          : null;
         return (
-          <section key={area.id} className="tile" style={{ borderLeft: `4px solid ${area.color}` }}>
-            <div className="mb-3 flex items-center gap-2">
-              <span aria-hidden>{area.icon}</span>
-              <h2 className="font-semibold">{area.name}</h2>
-              <span className="text-xs opacity-50">{objectives.length}개 목표</span>
-            </div>
-
-            {objectives.map((obj) => {
-              const krs = tree.keyResults.filter((k) => k.objective_id === obj.id);
-              const milestones = tree.milestones.filter((m) => m.objective_id === obj.id);
-              const avgPct = krs.length
-                ? Math.round(krs.reduce((s, k) => s + Math.min(150, (k.current_value / k.target_value) * 100), 0) / krs.length)
-                : 0;
-              return (
-                <details key={obj.id} className="group mb-2 rounded-xl border border-[var(--line)] p-3" open={obj.status === 'active'}>
-                  <summary className="flex cursor-pointer items-center gap-2 list-none">
-                    <span className={`text-sm font-medium ${obj.status === 'done' ? 'line-through opacity-50' : ''}`}>{obj.title}</span>
-                    <span className="ml-auto text-xs tabular-nums" style={{ color: signal(avgPct) }}>{avgPct}%</span>
-                  </summary>
-
-                  <div className="mt-3 space-y-3 pl-1">
-                    {/* KR 목록: 진척바 + 인라인 갱신 */}
-                    {krs.map((kr) => {
-                      const pct = Math.min(100, Math.round((kr.current_value / kr.target_value) * 100));
-                      return (
-                        <div key={kr.id} className="text-sm">
-                          <div className="flex items-center gap-2">
-                            <span className="area-dot" style={{ background: signal(pct) }} />
-                            <span className="flex-1">{kr.title}</span>
-                            <form action={updateKRProgress} className="flex items-center gap-1">
-                              <input type="hidden" name="id" value={kr.id} />
-                              <input name="current_value" defaultValue={kr.current_value} inputMode="decimal" className="w-16 text-right text-xs" aria-label="현재값" />
-                              <span className="text-xs opacity-60">/ {kr.target_value}{kr.unit}</span>
-                              <button type="submit" className="px-1.5 py-0.5 text-xs opacity-60 hover:opacity-100">저장</button>
-                            </form>
-                          </div>
-                          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--line)]">
-                            <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: signal(pct) }} />
-                          </div>
-                          {kr.source !== 'manual' && <p className="mt-0.5 text-[10px] opacity-50">자동: {kr.source} {kr.source_ref ?? ''}</p>}
-                        </div>
-                      );
-                    })}
-                    <form action={createKeyResult} className="flex flex-wrap items-center gap-1.5 text-xs">
-                      <input type="hidden" name="objective_id" value={obj.id} />
-                      <input name="title" placeholder="새 KR" className="flex-1 min-w-32" required />
-                      <input name="target_value" placeholder="목표값" inputMode="decimal" className="w-16" required />
-                      <input name="unit" placeholder="단위" className="w-12" />
-                      <select name="auto" defaultValue="" className="w-28" title="자동 집계 연결">
-                        <option value="">수동 입력</option>
-                        {habits.map((h) => (
-                          <option key={h.id} value={`habit:${h.id}`}>습관: {h.title.slice(0, 10)}</option>
-                        ))}
-                        <option value="api:auction_grade_a">연동: 경매 양호등급 수</option>
-                        <option value="api:jobs_sent">연동: 지원검토 공고 수</option>
-                      </select>
-                      <button type="submit" className="btn px-2.5 py-1 text-xs">＋KR</button>
-                    </form>
-
-                    {/* 월 마일스톤 */}
-                    <div className="space-y-1.5 border-t border-[var(--line)] pt-2">
-                      {milestones.map((ms) => {
-                        const inis = tree.initiatives.filter((i) => i.milestone_id === ms.id);
-                        return (
-                          <div key={ms.id} className="text-sm">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-medium opacity-60">{ms.month}</span>
-                              <span className={ms.status === 'done' ? 'line-through opacity-50' : ''}>{ms.title}</span>
-                              {ms.status === 'active' && (
-                                <form action={setStatus} className="ml-auto">
-                                  <input type="hidden" name="table" value="milestones" />
-                                  <input type="hidden" name="id" value={ms.id} />
-                                  <input type="hidden" name="status" value="done" />
-                                  <button type="submit" className="text-xs opacity-50 hover:opacity-100">완료</button>
-                                </form>
-                              )}
-                            </div>
-                            {inis.length > 0 && (
-                              <ul className="mt-1 space-y-0.5 pl-4 text-xs opacity-80">
-                                {inis.map((i) => (
-                                  <li key={i.id} className={i.status === 'done' ? 'line-through opacity-50' : ''}>
-                                    {i.priority === 1 ? '⚡ ' : ''}{i.title} <span className="opacity-40">({i.week_of}주)</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                            <form action={createInitiative} className="mt-1 flex gap-1.5 pl-4 text-xs">
-                              <input type="hidden" name="milestone_id" value={ms.id} />
-                              <input type="hidden" name="area_id" value={area.id} />
-                              <input type="hidden" name="week_of" value={kstMonday()} />
-                              <input name="title" placeholder="이번 주 이니셔티브" className="flex-1" required />
-                              <button type="submit" className="btn px-2.5 py-1 text-xs">＋</button>
-                            </form>
-                          </div>
-                        );
-                      })}
-                      <form action={createMilestone} className="flex gap-1.5 text-xs">
-                        <input type="hidden" name="objective_id" value={obj.id} />
-                        <input name="month" defaultValue={kstMonth()} className="w-20" required />
-                        <input name="title" placeholder="새 월 마일스톤" className="flex-1" required />
-                        <button type="submit" className="btn px-2.5 py-1 text-xs">＋마일스톤</button>
-                      </form>
-                    </div>
+          <Link key={obj.id} href={`/okr/${obj.id}`} className="pressable block">
+            <section className="tile space-y-4 !p-[18px]">
+              <div className="flex items-start gap-4">
+                <div className="flex flex-1 flex-col gap-1.5">
+                  <div className="mono text-[11px] tracking-wide" style={{ color: 'var(--accent)' }}>
+                    {areaById.get(obj.area_id)?.name ?? '영역'}
                   </div>
-                </details>
-              );
-            })}
-
-            <form action={createObjective} className="mt-2 flex gap-1.5 text-xs">
-              <input type="hidden" name="area_id" value={area.id} />
-              <input type="hidden" name="period" value={kstQuarter()} />
-              <input name="title" placeholder={`${area.name} 분기 목표 추가`} className="flex-1" required />
-              <button type="submit" className="btn px-2.5 py-1 text-xs">＋목표</button>
-            </form>
-          </section>
+                  <div className="text-lg font-medium leading-snug tracking-tight">{obj.title}</div>
+                  <div className="text-[13px]" style={{ color: 'var(--ink-2)' }}>{sentence}</div>
+                </div>
+                <div
+                  className="ring h-[58px] w-[58px]"
+                  style={{ background: `conic-gradient(var(--accent) 0 ${pct}%, #EDEAE2 ${pct}%)` }}
+                >
+                  <div className="ring-inner h-[44px] w-[44px] text-[13px]">{pct}%</div>
+                </div>
+              </div>
+              <div className="divider" />
+              <div className="flex items-center gap-2.5 text-[13px]" style={{ color: 'var(--ink-2)' }}>
+                {dday !== null ? (
+                  <>
+                    <span className="mono text-xs" style={{ color: dday <= 7 ? 'var(--urgent)' : 'var(--ink-3)' }}>
+                      D{dday >= 0 ? `-${dday}` : `+${-dday}`}
+                    </span>
+                    <span>{obj.due_date} 까지</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="mono text-xs" style={{ color: 'var(--ink-3)' }}>오늘</span>
+                    <span>{myWeek.length - doneCount > 0 ? `남은 할 일 ${myWeek.length - doneCount}개` : '오늘 몫은 끝났어요'}</span>
+                  </>
+                )}
+              </div>
+            </section>
+          </Link>
         );
       })}
 
-      </div>
-
-      <details className="tile">
-        <summary className="cursor-pointer text-sm font-medium opacity-70">＋ 새 영역</summary>
-        <form action={createArea} className="mt-2 flex gap-1.5 text-sm">
-          <input name="icon" placeholder="🏷" className="w-12" />
-          <input name="name" placeholder="영역 이름" className="flex-1" required />
-          <input name="color" type="color" defaultValue="#3b82f6" className="h-9 w-12 p-0.5" />
-          <button type="submit" className="btn px-3">추가</button>
-        </form>
-      </details>
+      <Link href="/okr/new" className="block">
+        <section
+          className="flex flex-col gap-1.5 rounded-2xl border border-dashed p-[18px]"
+          style={{ borderColor: 'var(--line-strong)' }}
+        >
+          <div className="text-[15px] font-medium" style={{ color: 'var(--ink-2)' }}>
+            {upcomingCount > 0 ? `마감 ${upcomingCount}건이 캘린더에 있어요` : '첫 목표를 세워보세요'}
+          </div>
+          <div className="text-[13px] leading-relaxed" style={{ color: 'var(--ink-3)' }}>
+            {objectives.length > 0 ? '이걸로 목표를 하나 더 만들 수 있습니다.' : '몇 가지 질문에 답하면 계획까지 잡아드려요.'}
+          </div>
+        </section>
+      </Link>
     </main>
   );
 }

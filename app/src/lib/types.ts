@@ -3,7 +3,7 @@ export type Area = {
 };
 export type Objective = {
   id: string; area_id: string; title: string; period: string;
-  status: 'active' | 'done' | 'dropped'; note: string | null;
+  status: 'active' | 'done' | 'dropped'; note: string | null; due_date: string | null;
 };
 export type Milestone = {
   id: string; objective_id: string; month: string; title: string; status: 'active' | 'done' | 'dropped';
@@ -13,8 +13,14 @@ export type KeyResult = {
   unit: string; source: 'manual' | 'habit_agg' | 'api'; source_ref: string | null;
 };
 export type Initiative = {
-  id: string; milestone_id: string | null; area_id: string | null; title: string; week_of: string;
+  id: string; milestone_id: string | null; objective_id: string | null; area_id: string | null;
+  title: string; week_of: string;
   status: 'active' | 'done' | 'dropped'; priority: number;
+};
+export type SessionLog = {
+  id: string; area_id: string | null; objective_id: string | null; task_id: string | null;
+  kind: 'log' | 'check' | 'review'; note: string | null;
+  metrics: { v: number; u: string }[] | null; logged_at: string;
 };
 export type DailyTask = {
   id: string; initiative_id: string | null; area_id: string | null; title: string; date: string;

@@ -26,7 +26,7 @@ export default async function CalendarPage() {
   return (
     <main className="mx-auto max-w-2xl space-y-4">
       <header className="flex items-baseline justify-between">
-        <h1 className="t-large">일정</h1>
+        <h1 className="t-large">달력</h1>
         <span className="flex items-center gap-2 text-xs opacity-50">
           앞으로 14일 · {sync.connected && !sync.error ? 'Google 연동됨' : sync.error ?? 'Google 미연결'}
           {sync.connected && (

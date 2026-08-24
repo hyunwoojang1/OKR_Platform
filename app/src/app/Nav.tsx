@@ -3,32 +3,20 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const S = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
+const S = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
 
+// v4: 아이콘은 절제 — 홈(문), 목표(과녁), 달력(캘린더)
 const ICONS: Record<string, (active: boolean) => React.ReactNode> = {
   today: (a) => (
     <svg viewBox="0 0 24 24" {...S} fill={a ? 'currentColor' : 'none'}>
-      <circle cx="12" cy="12" r="4.2" />
-      <path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M18.7 5.3 17 7M7 17l-1.7 1.7" />
-    </svg>
-  ),
-  hub: (a) => (
-    <svg viewBox="0 0 24 24" {...S}>
-      <circle cx="12" cy="12" r="2.6" fill={a ? 'currentColor' : 'none'} />
-      <circle cx="4.8" cy="6" r="2.1" /><circle cx="19.2" cy="6" r="2.1" /><circle cx="12" cy="20" r="2.1" />
-      <path d="M6.6 7.3 10 10.4M17.4 7.3 14 10.4M12 14.7v3.2" />
+      <path d="M4.5 10.2 12 4l7.5 6.2V19a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 19v-8.8Z" />
     </svg>
   ),
   okr: (a) => (
     <svg viewBox="0 0 24 24" {...S}>
-      <circle cx="12" cy="12" r="8.5" />
-      <circle cx="12" cy="12" r="4.8" />
-      <circle cx="12" cy="12" r="1.6" fill={a ? 'currentColor' : 'none'} />
-    </svg>
-  ),
-  habits: (a) => (
-    <svg viewBox="0 0 24 24" {...S} fill={a ? 'currentColor' : 'none'}>
-      <path d="M12 2.8c.6 3-1.4 4.3-2.6 6C8.1 10.6 7 12.3 7 14.5a5 5 0 0 0 10 0c0-1.6-.6-3-1.5-4.2-.4 1-1 1.8-2 2.3.3-2.8-.4-6.9-1.5-9.8Z" />
+      <circle cx="12" cy="12" r="8.2" />
+      <circle cx="12" cy="12" r="4.4" />
+      <circle cx="12" cy="12" r="1.4" fill={a ? 'currentColor' : 'none'} />
     </svg>
   ),
   calendar: (a) => (
@@ -38,20 +26,12 @@ const ICONS: Record<string, (active: boolean) => React.ReactNode> = {
       {a && <rect x="7" y="12.5" width="4" height="4" rx="1" fill="currentColor" stroke="none" />}
     </svg>
   ),
-  close: (a) => (
-    <svg viewBox="0 0 24 24" {...S} fill={a ? 'currentColor' : 'none'}>
-      <path d="M20 13.2A8.3 8.3 0 1 1 10.8 4a6.6 6.6 0 0 0 9.2 9.2Z" />
-    </svg>
-  ),
 };
 
 const NAV = [
-  { href: '/', label: '오늘', icon: 'today' },
-  { href: '/hub', label: '허브', icon: 'hub' },
+  { href: '/', label: '홈', icon: 'today' },
   { href: '/okr', label: '목표', icon: 'okr' },
-  { href: '/habits', label: '습관', icon: 'habits' },
-  { href: '/calendar', label: '일정', icon: 'calendar' },
-  { href: '/close', label: '마감', icon: 'close' },
+  { href: '/calendar', label: '달력', icon: 'calendar' },
 ];
 
 function isActive(href: string, pathname: string) {
@@ -63,11 +43,11 @@ export default function Nav() {
   if (pathname === '/login') return null;
   return (
     <>
-      {/* 데스크톱: econ식 상단 네비 */}
+      {/* 데스크톱: 상단 네비 */}
       <header className="topnav hidden md:block">
         <div className="mx-auto flex max-w-6xl items-center gap-6 px-6 py-2.5">
-          <Link href="/" className="flex items-center gap-2 text-[15px] font-800 font-extrabold tracking-tight">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black" style={{ background: 'var(--accent)', color: '#fff' }}>G</span>
+          <Link href="/" className="flex items-center gap-2 text-[15px] font-medium tracking-tight">
+            <span className="flex h-6 w-6 items-center justify-center rounded-lg text-[11px] font-medium text-white" style={{ background: 'var(--accent)' }}>G</span>
             목표 허브
           </Link>
           <nav className="ml-auto flex items-center gap-1">
@@ -80,7 +60,7 @@ export default function Nav() {
           </nav>
         </div>
       </header>
-      {/* 모바일: 하단 블러 탭바 */}
+      {/* 모바일: 하단 탭바 */}
       <nav className="tabbar md:hidden" aria-label="주 탐색">
         <div className="mx-auto flex max-w-3xl items-stretch">
           {NAV.map((n) => {

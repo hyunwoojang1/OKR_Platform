@@ -241,7 +241,7 @@ export default async function TodayPage() {
                   </li>
                 );
               })}
-              {t.habits.length === 0 && <li className="t-cap"><Link href="/habits" className="underline">첫 습관 만들기 →</Link></li>}
+              {t.habits.length === 0 && <li className="t-cap opacity-60">등록된 습관 없음</li>}
             </ul>
           </section>
 

@@ -1,5 +1,7 @@
 # versions.md — 목표관리설정
 
+- 2026-08-24 22:20 KST — 디자인 v4 (클로드 디자인 시안 구현, 1차): 종이톤 라이트+세이지 그린, IBM Plex Sans KR/Mono, OKR 용어 UI 퇴출. 탭 3개(홈·목표·달력)로 축소(허브·마감·습관 삭제, 데이터 보존). 목표 탭 v1 — 목록(진행 링+사람 문장+D-day), 상세(판단 지표·주차 칩·이번 달 히트맵·기록 타임라인·한 줄 남기기), 새 목표 4단계 위저드(확정 전 검토). 스키마: session_logs 신설(003)·initiatives.objective_id(004)·objectives.due_date·KR log_agg. 위저드→상세→체크→기록 E2E 검증 통과. 남은 것: AI 제안 연결(ANTHROPIC_API_KEY), 홈 v4 재설계, KR log_agg 자동집계, 배포.
+
 - 2026-08-24 20:00 KST — P5 완료(로컬 검증): Google OAuth 클라이언트 발급(claude-mcp-calendar 프로젝트 재활용, goal-hub 웹 클라이언트) + AUTH_MODE=google 로그인 실검증 + 캘린더 양방향 동기화 구현(lib/google-calendar.ts — push pending/pull 60일 배치 upsert/삭제 왕복 반영, 캘린더 페이지·아침 브리핑 크론에 연결). 페이지 내 동기화 이벤트별 왕복 → 배치 3쿼리로 개선(30s→1.3s). 프로덕션 env 전환은 다음 단계.
 
 - 2026-08-18 10:25 KST — 디자인 v3: 사용자 재피드백(공백 과다·OKR 부재·리스트 나열) → econ·auction 레퍼런스로 딥네이비 대시보드 전환. econ oklch 토큰 이식, KPI밴드, 홈 OKR 진척 섹션, 데스크톱 상단네비+12컬럼, 배포 완료.

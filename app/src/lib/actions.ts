@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { db } from './db';
-import { kstToday } from './types';
+import { kstToday, kstQuarter } from './types';
 
 // 모든 액션 공통: 입력을 서버에서 검증하고(빈 문자열 거부), 실패는 명시적으로 던진다.
 function must(v: FormDataEntryValue | null, name: string): string {
@@ -211,6 +211,93 @@ export async function syncCalendarNow() {
   if (result.error) throw new Error(`캘린더 동기화 실패: ${result.error}`);
   revalidatePath('/calendar');
   revalidatePath('/');
+}
+
+// ── 세션 로그 (v4: 만능 원자 — 체크·한 줄 기록·회고가 한 타임라인) ──
+export async function createLog(form: FormData) {
+  const note = must(form.get('note'), '기록');
+  await run('기록 저장', () =>
+    db().from('session_logs').insert({
+      objective_id: (form.get('objective_id') as string)?.trim() || null,
+      area_id: (form.get('area_id') as string)?.trim() || null,
+      kind: 'log',
+      note,
+    }),
+  );
+  const oid = (form.get('objective_id') as string)?.trim();
+  revalidatePath(oid ? `/okr/${oid}` : '/okr');
+}
+
+export async function toggleInitiativeDone(form: FormData) {
+  const id = must(form.get('id'), '할 일');
+  const done = form.get('done') === 'true';
+  await run('할 일 체크', () =>
+    db().from('initiatives').update({ status: done ? 'done' : 'active' }).eq('id', id),
+  );
+  if (done) {
+    // 체크 = 자동 로그 (실패해도 체크는 유지)
+    const { data } = await db().from('initiatives').select('title,area_id,milestone_id').eq('id', id).maybeSingle();
+    const oid = (form.get('objective_id') as string)?.trim() || null;
+    await db().from('session_logs').insert({
+      objective_id: oid, area_id: data?.area_id ?? null, kind: 'check', note: data?.title ?? null,
+    });
+  }
+  const oid = (form.get('objective_id') as string)?.trim();
+  revalidatePath(oid ? `/okr/${oid}` : '/okr');
+  revalidatePath('/');
+}
+
+// v4 목표 생성 위저드 확정: Objective + KR들 + 주별 계획을 한 번에 저장
+export async function createGoalPlan(payload: {
+  areaId: string;
+  title: string;
+  dueDate: string | null;
+  krs: { title: string; target: number; unit: string }[];
+  weeks: { weekOf: string; title: string }[];
+}) {
+  if (!payload.title.trim()) throw new Error('목표 제목이 비어 있습니다');
+  const { data: obj, error } = await db()
+    .from('objectives')
+    .insert({
+      area_id: payload.areaId,
+      title: payload.title.trim().slice(0, 200),
+      period: kstQuarter(),
+      due_date: payload.dueDate,
+    })
+    .select('id')
+    .single();
+  if (error || !obj) throw new Error(`목표 생성 실패: ${error?.message}`);
+
+  const krRows = payload.krs
+    .filter((k) => k.title.trim() && Number.isFinite(k.target) && k.target > 0)
+    .map((k) => ({
+      objective_id: obj.id,
+      title: k.title.trim().slice(0, 200),
+      target_value: k.target,
+      unit: k.unit.trim().slice(0, 20),
+      source: 'manual' as const,
+    }));
+  if (krRows.length > 0) {
+    const { error: krErr } = await db().from('key_results').insert(krRows);
+    if (krErr) throw new Error(`지표 생성 실패: ${krErr.message}`);
+  }
+
+  const iniRows = payload.weeks
+    .filter((w) => w.title.trim())
+    .map((w) => ({
+      area_id: payload.areaId,
+      objective_id: obj.id,
+      milestone_id: null,
+      title: w.title.trim().slice(0, 300),
+      week_of: w.weekOf,
+      priority: 2,
+    }));
+  if (iniRows.length > 0) {
+    const { error: iniErr } = await db().from('initiatives').insert(iniRows);
+    if (iniErr) throw new Error(`주별 계획 생성 실패: ${iniErr.message}`);
+  }
+  revalidatePath('/okr');
+  return obj.id as string;
 }
 
 // ── 저녁 마감 ──
