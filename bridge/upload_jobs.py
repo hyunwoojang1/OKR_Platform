@@ -4,16 +4,18 @@
   python upload_jobs.py <공고.json>
   JSON 형식: [{"source": "...", "company": "...", "title": "...", "url": "...", "deadline": "YYYY-MM-DD"|null}, ...]
 
-크롤러(장현우\\job_applications) 일일 실행 마지막에 이 스크립트를 붙이는 건
-크롤러 레포를 건드리는 일이라 내일 감독 하에 연결한다. (밤샘 안전 원칙)
-접속 정보는 econ-dashboard .env.local의 SUPABASE_URL/SUPABASE_SECRET_KEY 재사용.
+크롤러(github_repo\\job_applications) 일일 실행 마지막 단계에서 호출된다:
+  job_applications/5_AI툴/scripts/export_for_okr.py 가 변환한 JSON을 이 스크립트로 업로드.
+접속 정보는 이 레포 app/.env.local의 SUPABASE_URL/SUPABASE_SECRET_KEY 재사용.
+(2026-08-24 감독 하 연결 완료 — 구 econ-dashboard 경로에서 교체)
 """
 import json
 import os
 import sys
 import urllib.request
+from pathlib import Path
 
-ENV_PATH = r"C:\Users\notebiz765\장현우\econ-dashboard\.env.local"
+ENV_PATH = str(Path(__file__).resolve().parent.parent / "app" / ".env.local")
 
 
 def load_env(path: str) -> dict:
