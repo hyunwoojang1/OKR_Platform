@@ -1,6 +1,6 @@
 import { db } from './db';
 import { kstToday, kstMonday } from './types';
-import type { DailyTask, Habit, HabitLog, CalendarEvent, Initiative, KeyResult, Objective, Area } from './types';
+import type { DailyTask, Habit, HabitLog, CalendarEvent, Initiative, KeyResult, Objective, Area, JobPosting } from './types';
 
 // ── 자동 이월: 어제까지의 미완료 할일을 오늘로 옮기고 carried_over +1 ──
 export async function carryOverOpenTasks(): Promise<number> {
@@ -56,6 +56,7 @@ export type MorningBriefing = {
   tasks: Array<{ title: string; score: number; carried_over: number; due_date: string | null; areaName: string | null }>;
   habits: Array<{ title: string }>;
   events: Array<{ time: string; title: string }>;
+  jobsDue: Array<{ company: string; title: string; stage: string }>;
   lagging: Array<{ title: string; objTitle: string; pct: number }>;
   pushBody: string;
 };
@@ -66,7 +67,7 @@ export async function buildMorningBriefing(): Promise<MorningBriefing> {
 
   const dayStart = new Date(`${today}T00:00:00+09:00`).toISOString();
   const dayEnd = new Date(`${today}T23:59:59+09:00`).toISOString();
-  const [tasksQ, habitsQ, logsQ, eventsQ, krQ, objQ, areasQ, iniQ] = await Promise.all([
+  const [tasksQ, habitsQ, logsQ, eventsQ, krQ, objQ, areasQ, iniQ, jobsQ] = await Promise.all([
     db().from('daily_tasks').select('*').eq('date', today).eq('done', false),
     db().from('habits').select('*').eq('archived', false),
     db().from('habit_logs').select('*').eq('date', today),
@@ -75,8 +76,9 @@ export async function buildMorningBriefing(): Promise<MorningBriefing> {
     db().from('objectives').select('*'),
     db().from('areas').select('*'),
     db().from('initiatives').select('*').eq('status', 'active').eq('week_of', kstMonday()),
+    db().from('job_postings').select('*').eq('deadline', today).in('stage', ['수집함', '지원예정']),
   ]);
-  for (const r of [tasksQ, habitsQ, logsQ, eventsQ, krQ, objQ, areasQ, iniQ]) {
+  for (const r of [tasksQ, habitsQ, logsQ, eventsQ, krQ, objQ, areasQ, iniQ, jobsQ]) {
     if (r.error) throw new Error(`브리핑 조회 실패: ${r.error.message}`);
   }
   const tasks = (tasksQ.data as DailyTask[]).map((t) => ({ ...t, score: taskScore(t, today) }))
@@ -91,8 +93,16 @@ export async function buildMorningBriefing(): Promise<MorningBriefing> {
     title: e.title,
   }));
 
+  // 오늘 마감 공고 (job_applications 연동 스펙: "오늘 마감 N건 (지원예정 M건: 회사들)")
+  const jobsDue = (jobsQ.data as JobPosting[]) ?? [];
+  const promotedDue = jobsDue.filter((j) => j.stage === '지원예정');
+
   // 푸시 본문: 전체 목록 (Q4 결정). 잘려도 탭하면 앱에서 전체 확인.
   const lines: string[] = [];
+  if (jobsDue.length) {
+    const detail = promotedDue.length ? ` (지원예정 ${promotedDue.length}건: ${promotedDue.map((j) => j.company).join('·')})` : '';
+    lines.push(`💼 오늘 마감 공고 ${jobsDue.length}건${detail}`);
+  }
   if (events.length) lines.push(`📅 ${events.map((e) => `${e.time} ${e.title}`).join(' · ')}`);
   tasks.forEach((t, i) => {
     const badge = t.carried_over > 0 ? ` (이월${t.carried_over})` : t.due_date ? ` (~${t.due_date.slice(5)})` : '';
@@ -113,6 +123,7 @@ export async function buildMorningBriefing(): Promise<MorningBriefing> {
     })),
     habits: habitsDue.map((h) => ({ title: h.title })),
     events,
+    jobsDue: jobsDue.map((j) => ({ company: j.company, title: j.title, stage: j.stage })),
     lagging: lagging.map((l) => ({ title: l.kr.title, objTitle: l.objTitle, pct: Math.round((l.kr.current_value / l.kr.target_value) * 100) })),
     pushBody: lines.join('\n') || '오늘 계획이 비어 있어요. 앱에서 하루를 설계해보세요 ✨',
   };

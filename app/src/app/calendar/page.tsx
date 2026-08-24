@@ -2,8 +2,9 @@ import Link from 'next/link';
 import { db } from '@/lib/db';
 import { createEvent, deleteEvent, syncCalendarNow } from '@/lib/actions';
 import { syncCalendar } from '@/lib/google-calendar';
-import type { CalendarEvent } from '@/lib/types';
+import type { CalendarEvent, JobPosting } from '@/lib/types';
 import { kstToday } from '@/lib/types';
+import JobActions from '../jobs/JobActions';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,17 +32,29 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
 
   const monthStart = new Date(`${month}-01T00:00:00+09:00`).toISOString();
   const monthEnd = new Date(new Date(`${month}-${String(daysInMonth).padStart(2, '0')}T00:00:00+09:00`).getTime() + 86400_000).toISOString();
-  const { data, error } = await db()
-    .from('calendar_events').select('*').gte('starts_at', monthStart).lt('starts_at', monthEnd).order('starts_at');
-  if (error) throw new Error(`일정 조회 실패: ${error.message}`);
-  const events = data as CalendarEvent[];
+  const monthEndDate = `${month}-${String(daysInMonth).padStart(2, '0')}`;
+  const [evsQ, jobsQ] = await Promise.all([
+    db().from('calendar_events').select('*').gte('starts_at', monthStart).lt('starts_at', monthEnd).order('starts_at'),
+    db().from('job_postings').select('*').in('stage', ['수집함', '지원예정'])
+      .gte('deadline', `${month}-01`).lte('deadline', monthEndDate).order('deadline'),
+  ]);
+  if (evsQ.error) throw new Error(`일정 조회 실패: ${evsQ.error.message}`);
+  if (jobsQ.error) throw new Error(`공고 조회 실패: ${jobsQ.error.message}`);
+  const events = evsQ.data as CalendarEvent[];
+  const monthJobs = jobsQ.data as JobPosting[];
 
   const byDate = new Map<string, CalendarEvent[]>();
   for (const e of events) {
     const d = kstDateStr(e.starts_at);
     byDate.set(d, [...(byDate.get(d) ?? []), e]);
   }
+  const jobsByDate = new Map<string, JobPosting[]>();
+  for (const j of monthJobs) {
+    if (!j.deadline) continue;
+    jobsByDate.set(j.deadline, [...(jobsByDate.get(j.deadline) ?? []), j]);
+  }
   const dayEvents = byDate.get(selected) ?? [];
+  const dayJobs = jobsByDate.get(selected) ?? [];
   const selDay = Number(selected.slice(8, 10));
   const selDow = kstDow(selected);
 
@@ -49,7 +62,8 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
     <main className="mx-auto max-w-2xl space-y-5">
       <header className="flex items-center justify-between">
         <h1 className="t-large">달력</h1>
-        <span className="flex items-center gap-2 text-xs" style={{ color: 'var(--ink-3)' }}>
+        <span className="flex items-center gap-3 text-xs" style={{ color: 'var(--ink-3)' }}>
+          <Link href="/jobs" className="underline underline-offset-2">공고 →</Link>
           {sync.connected && !sync.error ? 'Google 연동됨' : sync.error ?? 'Google 미연결'}
           {sync.connected && (
             <form action={syncCalendarNow}>
@@ -76,6 +90,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
             const isToday = day === today;
             const isSel = day === selected;
             const has = (byDate.get(day) ?? []).length > 0;
+            const hasJobs = (jobsByDate.get(day) ?? []).length > 0;
             const dow = (firstDow + i) % 7;
             return (
               <Link key={day} href={`/calendar?m=${month}&d=${day}`} className="flex flex-col items-center gap-0.5 py-1">
@@ -91,7 +106,10 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
                 >
                   {i + 1}
                 </span>
-                <span className="h-1.5 w-1.5 rounded-full" style={{ background: has ? 'var(--accent)' : 'transparent' }} />
+                <span className="flex h-1.5 items-center gap-0.5">
+                  {has && <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--accent)' }} />}
+                  {hasJobs && <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--urgent)' }} />}
+                </span>
               </Link>
             );
           })}
@@ -131,6 +149,34 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
           <p className="text-sm" style={{ color: 'var(--ink-3)' }}>이날은 일정이 없어요.</p>
         )}
       </section>
+
+      {/* 이날 마감인 채용공고 (job_applications 크롤 연동) */}
+      {dayJobs.length > 0 && (
+        <section className="space-y-2.5">
+          <div className="flex items-baseline justify-between">
+            <div className="sec-label" style={{ color: 'var(--urgent)' }}>이날 마감 공고</div>
+            <Link href="/jobs" className="mono text-xs underline underline-offset-2" style={{ color: 'var(--ink-3)' }}>{dayJobs.length}건 · 전체 →</Link>
+          </div>
+          <div className="space-y-2.5">
+            {dayJobs.map((j) => (
+              <div key={j.id} className="tile space-y-3 !p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-[15px] font-medium">{j.company}</span>
+                      {j.stage === '지원예정' && <span className="badge badge-accent shrink-0">지원예정</span>}
+                    </div>
+                    <a href={j.url} target="_blank" rel="noreferrer" className="block truncate text-[13px] underline-offset-2 hover:underline" style={{ color: 'var(--ink-2)' }}>
+                      {j.title}
+                    </a>
+                  </div>
+                </div>
+                <JobActions job={j} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* 일정 추가 — 선택한 날짜 기본값 */}
       <section className="tile">

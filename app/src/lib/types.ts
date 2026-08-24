@@ -40,6 +40,9 @@ export type DailyReview = { id: string; date: string; note: string | null; check
 export type JobPosting = {
   id: string; source: string; company: string; title: string; url: string; deadline: string | null;
   crawled_at: string; starred: boolean; sent_to_task: boolean;
+  // v2 (job_applications 연동 스펙): 취준 크롤러가 채우는 파이프라인 상태
+  stage: string; category: string | null; dday: number | null;
+  analyzed: boolean; essay: boolean; priority: string | null;
 };
 
 // KST 기준 날짜 유틸 (서버가 UTC여도 한국 하루 기준으로 동작해야 함)
