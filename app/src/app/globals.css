@@ -300,6 +300,13 @@ input[type="checkbox"] { -webkit-appearance: checkbox; appearance: auto; }
   font-family: "IBM Plex Mono", ui-monospace, monospace;
 }
 
+/* 목표 포커스: 실행 주간이 한 번 반짝이고 은은하게 남는다 */
+@keyframes goal-glow-in {
+  0% { background: oklch(0.88 0.07 150); }
+  100% { background: var(--accent-bg-soft); }
+}
+.goal-glow { animation: goal-glow-in 0.5s ease-out both; }
+
 /* 기록 타임라인 */
 .tl-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .tl-line { flex: 1; width: 1px; background: var(--line-strong); }
