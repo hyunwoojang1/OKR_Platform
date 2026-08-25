@@ -281,6 +281,11 @@ input[type="checkbox"] { -webkit-appearance: checkbox; appearance: auto; }
   border: 1px solid var(--line-strong);
   padding: 6px 12px;
   font-size: 12.5px;
+  /* 칩 내부 줄바꿈 금지 — "주간 러닝 거리 30km"가 꺾여 "km"만 남는 사고 방지 (QA) */
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .badge {
   display: inline-flex; align-items: center;
