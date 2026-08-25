@@ -384,6 +384,74 @@ export async function suggestGoalPlan(payload: {
   return { ok: true, krs, weeks, engine: engine === 'ollama' ? `로컬 AI(${model})` : `Groq(${model})` };
 }
 
+// 확정 전 지표 검토 (QA): 사용자가 자유 입력한 지표("주당 러닝 30km", 시작 "지금 5km")를
+// AI가 구조화·정돈한다. 실패하면 ok:false — 호출부는 로컬 파싱으로 조용히 진행한다.
+export type NormalizedKr = { title: string; target: number; unit: string; start?: number; cadence: 'total' | 'weekly' };
+
+export async function normalizeKrDrafts(payload: {
+  goalTitle: string;
+  krs: { title: string; target: string; start?: string; weekly?: boolean }[];
+}): Promise<{ ok: true; krs: NormalizedKr[] } | { ok: false }> {
+  const { chatCompleteJson } = await import('./llm');
+  const items = (payload.krs ?? [])
+    .slice(0, 5)
+    .map((k) => ({
+      title: String(k.title ?? '').trim().slice(0, 40),
+      target: String(k.target ?? '').trim().slice(0, 30),
+      start: String(k.start ?? '').trim().slice(0, 30),
+      weekly: !!k.weekly,
+    }))
+    .filter((k) => k.title && k.target);
+  if (items.length === 0) return { ok: false };
+
+  const lines = items
+    .map((k, i) => `${i + 1}. 이름: "${k.title}" / 목표 입력: "${k.target}"${k.start ? ` / 시작 입력: "${k.start}"` : ''}${k.weekly ? ' / 매주 반복' : ''}`)
+    .join('\n');
+
+  let content = '';
+  try {
+    const r = await chatCompleteJson(
+      [
+        {
+          role: 'system',
+          content:
+            '너는 목표 지표 정리 도우미다. 사용자가 자유롭게 쓴 지표에서 숫자 목표(target)·단위(unit)·시작값(start)을 뽑아 정리한다. ' +
+            '반드시 JSON 객체 하나만 출력: {"krs":[{"title":"지표 이름(간결한 명사형)","target":숫자,"unit":"단위(3자 이내, 없으면 빈 문자열)","start":숫자또는null}]}. ' +
+            '입력 순서 그대로, 같은 개수로. 의미를 바꾸거나 새 지표를 만들지 마라. 단위가 이름에 섞여 있으면 unit으로 옮겨라.',
+        },
+        { role: 'user', content: `목표: "${payload.goalTitle.trim().slice(0, 200)}"\n지표들:\n${lines}` },
+      ],
+      20_000,
+    );
+    content = r.content;
+  } catch {
+    return { ok: false };
+  }
+
+  // LLM 출력은 외부 입력 — 엄격 검증, 개수 불일치·이상값이면 통째로 포기한다.
+  try {
+    const obj = JSON.parse(content) as { krs?: unknown };
+    const arr = Array.isArray(obj.krs) ? obj.krs : [];
+    if (arr.length !== items.length) return { ok: false };
+    const krs: NormalizedKr[] = arr.map((k, i) => {
+      const r = (typeof k === 'object' && k !== null ? k : {}) as Record<string, unknown>;
+      const target = Number(String(r.target ?? '').match(/\d+(?:\.\d+)?/)?.[0]);
+      const start = Number(String(r.start ?? '').match(/\d+(?:\.\d+)?/)?.[0]);
+      return {
+        title: (String(r.title ?? '').trim() || items[i].title).slice(0, 30),
+        target: Number.isFinite(target) && target > 0 ? target : 0,
+        unit: String(r.unit ?? '').trim().slice(0, 6),
+        start: Number.isFinite(start) && start > 0 ? start : undefined,
+        cadence: items[i].weekly ? 'weekly' : 'total',
+      };
+    });
+    if (krs.some((k) => !k.title || k.target <= 0)) return { ok: false };
+    return { ok: true, krs };
+  } catch {
+    return { ok: false };
+  }
+}
+
 // 계열화 제안: 위저드 검토 단계에서 호출 — 같은 영역의 최상위 활성 목표 중 대목표 후보를 AI가 고른다.
 // 2단 트리로 제한(소목표 아래 또 소목표 금지) — 후보는 parent_id 없는 목표만.
 export async function suggestParentGoal(payload: {

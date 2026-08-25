@@ -2,27 +2,39 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { createGoalPlan, suggestGoalPlan } from '@/lib/actions';
+import { createGoalPlan, normalizeKrDrafts, suggestGoalPlan } from '@/lib/actions';
 import type { Area } from '@/lib/types';
 import { kstToday } from '@/lib/types';
 
-// start: 시작값(선택) — 목표보다 크면 줄이기형(체중 75→70). cadence: 매주 반복형 여부.
+// target/start 는 사용자가 친 원문 그대로("30km", "75kg") — 숫자·단위 분리는 뒤에서 한다.
+// unit 은 추천 칩이 넣어주는 힌트일 뿐, 입력 UI에는 단위 칸이 없다 (QA: 단위 칩 제거).
 type KRDraft = { title: string; target: string; unit: string; start?: string; cadence?: 'total' | 'weekly' };
+
+// "30km" → { num: 30, unit: 'km' }. 숫자 없으면 num 0.
+function parseAmount(raw: string | undefined): { num: number; unit: string } {
+  const s = (raw ?? '').trim();
+  const num = Number((s.match(/\d+(?:[.,]\d+)?/)?.[0] ?? '').replace(',', ''));
+  const unit = s.replace(/[\d.,\s]/g, '').slice(0, 6);
+  return { num: Number.isFinite(num) && num > 0 ? num : 0, unit };
+}
+function krUnit(k: KRDraft): string {
+  return parseAmount(k.target).unit || parseAmount(k.start).unit || k.unit || '';
+}
 
 // 지표를 사람 문장으로 — 검토·확인 문구가 전부 이걸 쓴다.
 function krSentence(k: KRDraft): string {
-  const startNum = Number(k.start ?? '');
-  const hasStart = !!k.start?.trim() && Number.isFinite(startNum) && startNum !== Number(k.target);
-  if (k.cadence === 'weekly') return `매주 ${k.title.trim()} ${k.target}${k.unit}`;
-  if (hasStart) return `${k.title.trim()} ${k.start}${k.unit} → ${k.target}${k.unit}`;
-  return `${k.title.trim()} ${k.target}${k.unit}`;
+  const t = parseAmount(k.target);
+  const s = parseAmount(k.start);
+  const unit = krUnit(k);
+  if (k.cadence === 'weekly') return `매주 ${k.title.trim()} ${t.num}${unit}`;
+  if (s.num > 0 && s.num !== t.num) return `${k.title.trim()} ${s.num}${unit} → ${t.num}${unit}`;
+  return `${k.title.trim()} ${t.num}${unit}`;
 }
 type UpcomingEvent = { title: string; date: string };
 
 const WEEK_OPTIONS = [4, 6, 8];
 const MAX_WEEKS = 12;
 const MAX_KRS = 5;
-const UNIT_CHIPS = ['회', '개', 'km', '점', '곳', '시간', '권', '%'];
 
 // 영역 이름 키워드 → 추천 지표. 탭 한 번으로 행이 완성된다.
 const KR_SUGGESTIONS: { match: RegExp; items: KRDraft[] }[] = [
@@ -182,12 +194,6 @@ function cleanEventTitle(raw: string): string {
     .slice(0, 30);
 }
 
-// "30km"처럼 섞어 쳐도 숫자만 목표로, 붙은 글자는 단위로 살린다.
-function splitNumberAndUnit(raw: string): { num: string; unit: string } {
-  const num = raw.match(/\d+(?:\.\d+)?/)?.[0] ?? '';
-  const unit = raw.replace(/[\d.,\s]/g, '').slice(0, 6);
-  return { num, unit };
-}
 
 // v4 새 목표 위저드: 질문 하나씩 → 마지막에 "이렇게 잡아봤어요" 검토 → 확정.
 // AI는 제안, 확정은 사용자 — 확정 전엔 아무것도 저장되지 않는다.
@@ -209,6 +215,12 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
   const [aiNote, setAiNote] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
 
+  // 확정 전 AI 검토: 지표 원문("30km")을 구조화해 한 번 다듬는다. 실패하면 로컬 해석 그대로 (QA: 제출 전 AI가 한 번 본다).
+  const [reviewedKrs, setReviewedKrs] = useState<
+    { title: string; target: number; unit: string; start?: number; cadence: 'total' | 'weekly' }[] | null
+  >(null);
+  const [reviewPending, startReviewTransition] = useTransition();
+
   // 주별 계획 유령 초안: 빈칸에 흐릿하게 깔리고, Tab(또는 ✨ 탭)으로 그대로 채운다.
   const [weekGhosts, setWeekGhosts] = useState<string[]>([]);
   const [ghostPending, startGhostTransition] = useTransition();
@@ -219,8 +231,8 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
   const effWeeks = isCustomDueValid ? weeksUntil(customDue) : dueWeeks;
   const dueDate = isCustomDueValid ? customDue : kstMondayPlus(dueWeeks);
 
-  const validKrCount = krs.filter((k) => k.title.trim() && Number(k.target) > 0).length;
-  const hasTitleWithoutNumber = krs.some((k) => k.title.trim() && !(Number(k.target) > 0));
+  const validKrCount = krs.filter((k) => k.title.trim() && parseAmount(k.target).num > 0).length;
+  const hasTitleWithoutNumber = krs.some((k) => k.title.trim() && parseAmount(k.target).num === 0);
 
   const canNext =
     step === 0 ? title.trim().length > 0
@@ -233,7 +245,7 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
     canNext ? null
     : step === 0 ? '한 줄만 쓰면 다음으로 갈 수 있어요. 아래 예시를 탭해도 돼요.'
     : step === 1 ? (!areaId ? '영역을 하나 골라주세요.' : '기한 날짜가 지났어요. 오늘 이후로 골라주세요.')
-    : hasTitleWithoutNumber ? "'얼마나'에 숫자를 넣으면 다음이 열려요. (예: 30)"
+    : hasTitleWithoutNumber ? "'목표'에 숫자를 넣으면 다음이 열려요. (예: 30km)"
     : '지표를 하나 채우거나, 추천을 탭해보세요. 어려우면 건너뛰어도 돼요.';
 
   const areaName = areas.find((a) => a.id === areaId)?.name ?? '';
@@ -289,12 +301,12 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
   // 확정된 지표를 AI에 먹일 형태로 — 주별 초안이 "러닝" 한 단어가 아니라 지표를 향해 쓰이게 한다.
   function chosenKrsPayload() {
     return krs
-      .filter((k) => k.title.trim() && Number(k.target) > 0)
+      .filter((k) => k.title.trim() && parseAmount(k.target).num > 0)
       .map((k) => ({
         title: k.title,
-        target: Number(k.target),
-        unit: k.unit,
-        start: Number(k.start ?? '') > 0 ? Number(k.start) : undefined,
+        target: parseAmount(k.target).num,
+        unit: krUnit(k),
+        start: parseAmount(k.start).num > 0 ? parseAmount(k.start).num : undefined,
         cadence: k.cadence ?? 'total',
       }));
   }
@@ -315,7 +327,7 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
           const added = plan.krs
             .filter((s) => !kept.some((k) => k.title.trim() === s.title))
             .slice(0, Math.max(0, room))
-            .map((s) => ({ title: s.title, target: String(s.target), unit: s.unit }));
+            .map((s) => ({ title: s.title, target: `${s.target}${s.unit}`, unit: '' }));
           const next = [...kept, ...added];
           return next.length > 0 ? next : prev;
         });
@@ -348,6 +360,38 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
+  // 검토 단계 진입 시 AI가 지표 표기를 한 번 정리 — 실패는 조용히 무시(로컬 해석 사용).
+  useEffect(() => {
+    if (step !== 4) return;
+    setReviewedKrs(null);
+    const raw = krs
+      .filter((k) => k.title.trim() && parseAmount(k.target).num > 0)
+      .map((k) => ({ title: k.title, target: k.target, start: k.start, weekly: k.cadence === 'weekly' }));
+    if (raw.length === 0) return;
+    startReviewTransition(async () => {
+      try {
+        const r = await normalizeKrDrafts({ goalTitle: title, krs: raw });
+        if (r.ok && r.krs.length === raw.length) setReviewedKrs(r.krs);
+      } catch {
+        // AI 없이도 확정은 그대로 가능
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
+  // 검토·확정에 쓰는 최종 지표: AI 검토본이 있으면 그것, 없으면 로컬 해석.
+  const finalKrs =
+    reviewedKrs ??
+    krs
+      .filter((k) => k.title.trim() && parseAmount(k.target).num > 0)
+      .map((k) => ({
+        title: k.title.trim(),
+        target: parseAmount(k.target).num,
+        unit: krUnit(k),
+        start: parseAmount(k.start).num > 0 ? parseAmount(k.start).num : undefined,
+        cadence: (k.cadence ?? 'total') as 'total' | 'weekly',
+      }));
+
   function acceptGhost(i: number) {
     const ghost = weekGhosts[i];
     if (!ghost) return;
@@ -364,6 +408,14 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
   }
 
   function toggleKrSuggestion(s: KRDraft) {
+    // 추천 칩 → 입력칸에는 "30km"처럼 원문으로 채운다 (단위 칸이 따로 없으므로)
+    const filled: KRDraft = {
+      title: s.title,
+      target: `${s.target}${s.unit}`,
+      unit: '',
+      start: s.start ? `${s.start}${s.unit}` : undefined,
+      cadence: s.cadence,
+    };
     setKrs((prev) => {
       const idx = prev.findIndex((k) => k.title.trim() === s.title);
       if (idx >= 0) {
@@ -371,8 +423,8 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
         return next.length > 0 ? next : [{ title: '', target: '', unit: '' }];
       }
       const emptyIdx = prev.findIndex((k) => !k.title.trim());
-      if (emptyIdx >= 0) return prev.map((k, j) => (j === emptyIdx ? { ...s } : k));
-      if (prev.length < MAX_KRS) return [...prev, { ...s }];
+      if (emptyIdx >= 0) return prev.map((k, j) => (j === emptyIdx ? filled : k));
+      if (prev.length < MAX_KRS) return [...prev, filled];
       return prev;
     });
   }
@@ -385,13 +437,7 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
           areaId,
           title,
           dueDate,
-          krs: krs.map((k) => ({
-            title: k.title,
-            target: Number(k.target),
-            unit: k.unit,
-            start: Number(k.start ?? '') > 0 ? Number(k.start) : undefined,
-            cadence: k.cadence ?? 'total',
-          })),
+          krs: finalKrs,
           weeks: weeks.map((w, i) => ({ weekOf: kstMondayPlus(i), title: w })),
         });
         router.push(`/okr/${id}`);
@@ -595,51 +641,24 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
                     )}
                   </div>
                   <div className="divider" />
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[13px]" style={{ color: 'var(--ink-3)' }}>{k.cadence === 'weekly' ? '매주 몇 번?' : '얼마나?'}</span>
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-16 shrink-0 text-[13px]" style={{ color: 'var(--ink-3)' }}>{k.cadence === 'weekly' ? '매주' : '목표'}</span>
                     <input
                       value={k.target}
-                      onChange={(e) => {
-                        const { num, unit } = splitNumberAndUnit(e.target.value);
-                        updateKr(i, { target: num, ...(unit && !k.unit ? { unit } : {}) });
-                      }}
-                      placeholder="30"
-                      inputMode="decimal"
-                      className="mono w-[72px] text-center !py-1.5"
+                      onChange={(e) => updateKr(i, { target: e.target.value })}
+                      placeholder={k.cadence === 'weekly' ? '예: 3회 · 30km' : '예: 30km · 12회 · 75점'}
+                      className="min-w-0 flex-1 !py-1.5"
                     />
-                    <div className="flex flex-wrap gap-1.5">
-                      {UNIT_CHIPS.map((u) => {
-                        const on = k.unit === u;
-                        return (
-                          <button
-                            key={u}
-                            onClick={() => updateKr(i, { unit: on ? '' : u })}
-                            className="chip pressable !px-2.5 !py-1 !text-[12px]"
-                            style={
-                              on
-                                ? { border: '1.5px solid var(--accent)', background: 'var(--accent-bg-soft)', color: 'var(--accent-deep)', fontWeight: 500 }
-                                : { color: 'var(--ink-3)' }
-                            }
-                          >
-                            {u}
-                          </button>
-                        );
-                      })}
-                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2.5">
                     {k.cadence !== 'weekly' && (
                       <>
-                        <span className="text-[13px]" style={{ color: 'var(--ink-3)' }}>지금은?</span>
+                        <span className="w-16 shrink-0 text-[13px]" style={{ color: 'var(--ink-3)' }}>시작<span style={{ color: 'var(--ink-4)' }}>(선택)</span></span>
                         <input
                           value={k.start ?? ''}
-                          onChange={(e) => {
-                            const { num, unit } = splitNumberAndUnit(e.target.value);
-                            updateKr(i, { start: num, ...(unit && !k.unit ? { unit } : {}) });
-                          }}
-                          placeholder="0"
-                          inputMode="decimal"
-                          className="mono w-[72px] text-center !py-1.5"
+                          onChange={(e) => updateKr(i, { start: e.target.value })}
+                          placeholder="지금 수준 — 예: 75kg · 비워도 돼요"
+                          className="min-w-0 flex-1 !py-1.5"
                         />
                       </>
                     )}
@@ -654,11 +673,11 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
                     >
                       {k.cadence === 'weekly' ? '✓ 매주 반복' : '매주 반복'}
                     </button>
-                    {k.cadence !== 'weekly' && Number(k.start ?? '') > Number(k.target) && Number(k.target) > 0 && (
+                    {k.cadence !== 'weekly' && parseAmount(k.start).num > parseAmount(k.target).num && parseAmount(k.target).num > 0 && (
                       <span className="text-[12px]" style={{ color: 'var(--ink-3)' }}>줄이는 목표네요</span>
                     )}
                   </div>
-                  {k.title.trim() && Number(k.target) > 0 && (
+                  {k.title.trim() && parseAmount(k.target).num > 0 && (
                     <div className="text-[13px]" style={{ color: 'var(--accent-deep)' }}>
                       ✓ “{krSentence(k)}” — 이걸로 진행률을 재요.
                     </div>
@@ -758,11 +777,14 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
               </div>
               <div className="text-[19px] font-medium leading-snug tracking-tight">{title}</div>
             </div>
-            {krs.some((k) => k.title.trim()) && (
+            {finalKrs.length > 0 && (
               <div className="space-y-2.5">
-                <div className="sec-label">이걸로 판단해요 · {krs.filter((k) => k.title.trim()).length}개</div>
+                <div className="sec-label">
+                  이걸로 판단해요 · {finalKrs.length}개
+                  {reviewPending ? ' · ✨ AI가 표기를 확인하는 중…' : reviewedKrs ? ' · ✨ AI 확인 완료' : ''}
+                </div>
                 <div className="overflow-hidden rounded-2xl border" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
-                  {krs.filter((k) => k.title.trim()).map((k, i) => (
+                  {finalKrs.map((k, i) => (
                     <div key={i}>
                       {i > 0 && <div className="divider mx-4" />}
                       <div className="flex items-center justify-between px-4 py-[15px]">
@@ -770,7 +792,7 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
                         <span className="mono text-[13px]" style={{ color: 'var(--ink-2)' }}>
                           {k.cadence === 'weekly'
                             ? `매주 ${k.target}${k.unit}`
-                            : Number(k.start ?? '') > 0 && Number(k.start) !== Number(k.target)
+                            : k.start !== undefined && k.start !== k.target
                               ? `${k.start} → ${k.target}${k.unit}`
                               : `${k.target}${k.unit}`}
                         </span>
