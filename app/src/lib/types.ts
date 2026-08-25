@@ -5,6 +5,7 @@ export type Objective = {
   id: string; area_id: string; title: string; period: string;
   status: 'active' | 'done' | 'dropped'; note: string | null; due_date: string | null;
   parent_id: string | null; // 계열화: 소목표 → 대목표 (2단 트리)
+  pinned: boolean; // 홈 D-day 보드 등재 여부 (기한 있는 활성 목표만 실제 표시)
 };
 export type Milestone = {
   id: string; objective_id: string; month: string; title: string; status: 'active' | 'done' | 'dropped';

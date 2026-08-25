@@ -304,6 +304,10 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
     startAiTransition(async () => {
       try {
         const plan = await suggestGoalPlan({ title, areaName, weekCount: effWeeks, krs: chosenKrsPayload() });
+        if (!plan.ok) {
+          setAiError(plan.message);
+          return;
+        }
         // 사용자가 이미 쓴 행은 지키고, 빈 자리만 AI 제안으로 채운다.
         setKrs((prev) => {
           const kept = prev.filter((k) => k.title.trim());
@@ -319,8 +323,8 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
         setWeekGhosts(plan.weeks);
         ghostRequested.current = true;
         setAiNote(`${plan.engine}가 초안을 잡았어요 — 마음에 안 드는 건 고치거나 지우세요. 주별 계획 초안은 다음 단계에 흐릿하게 보여드려요.`);
-      } catch (e) {
-        setAiError(e instanceof Error ? e.message : 'AI가 응답하지 않아요. Ollama가 켜져 있는지 확인해주세요.');
+      } catch {
+        setAiError('지금은 AI 초안을 쓸 수 없어요. 직접 입력해도 충분해요.');
       }
     });
   }
@@ -329,7 +333,7 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
     startGhostTransition(async () => {
       try {
         const plan = await suggestGoalPlan({ title, areaName, weekCount: effWeeks, krs: chosenKrsPayload() });
-        setWeekGhosts(plan.weeks);
+        if (plan.ok) setWeekGhosts(plan.weeks);
       } catch {
         // 초안 실패는 조용히 넘어간다 — 수동 입력은 그대로 가능.
       }

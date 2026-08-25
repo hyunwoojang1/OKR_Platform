@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
-import { createLog, toggleInitiativeDone, updateKRProgress } from '@/lib/actions';
+import { createLog, toggleInitiativeDone, togglePinObjective, updateKRProgress } from '@/lib/actions';
 import type { Area, Objective, KeyResult, Initiative, SessionLog } from '@/lib/types';
 import { kstToday, kstMonday, kstMonth, krPct } from '@/lib/types';
 
@@ -82,8 +82,23 @@ export default async function GoalDetailPage({
         </div>
 
         <header className="space-y-3">
-          <div className="mono text-[11px] tracking-wide" style={{ color: 'var(--accent)' }}>
-            {area?.name ?? '영역'}{obj.due_date ? ` · ${obj.due_date.slice(5).replace('-', '/')}까지` : ''}
+          <div className="flex items-center justify-between">
+            <div className="mono text-[11px] tracking-wide" style={{ color: 'var(--accent)' }}>
+              {area?.name ?? '영역'}{obj.due_date ? ` · ${obj.due_date.slice(5).replace('-', '/')}까지` : ''}
+            </div>
+            {/* 📌 = 홈 D-day 보드 등재 (기한 있는 목표만 실제 표시됨) */}
+            <form action={togglePinObjective}>
+              <input type="hidden" name="id" value={obj.id} />
+              <input type="hidden" name="pinned" value={obj.pinned ? 'false' : 'true'} />
+              <button
+                type="submit"
+                title={obj.pinned ? 'D-day 보드에서 내리기' : 'D-day 보드에 올리기'}
+                className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] ${obj.pinned ? '' : 'opacity-50'}`}
+                style={{ borderColor: obj.pinned ? 'var(--accent)' : 'var(--line-strong)', color: obj.pinned ? 'var(--accent-deep)' : 'var(--ink-3)' }}
+              >
+                📌 D-day{obj.pinned ? '' : ' 꺼짐'}
+              </button>
+            </form>
           </div>
           <h1 className="text-2xl font-medium leading-snug tracking-tight" style={{ textWrap: 'pretty' }}>{obj.title}</h1>
           <div className="flex items-center gap-2.5">

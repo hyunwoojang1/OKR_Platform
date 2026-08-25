@@ -237,6 +237,16 @@ export async function togglePinEvent(form: FormData) {
   revalidatePath('/');
 }
 
+// D-day 보드 핀 (목표): 목표 상세의 📌 → 홈 카운트다운 등재/해제 (QA 6번)
+export async function togglePinObjective(form: FormData) {
+  const id = must(form.get('id'), '목표');
+  const pinned = form.get('pinned') === 'true';
+  await run('목표 핀 변경', () => db().from('objectives').update({ pinned }).eq('id', id));
+  revalidatePath(`/okr/${id}`);
+  revalidatePath('/okr');
+  revalidatePath('/');
+}
+
 export async function syncCalendarNow() {
   const { syncCalendar } = await import('./google-calendar');
   const result = await syncCalendar(true);
@@ -287,16 +297,20 @@ export type GoalSuggestion = {
   engine: string;
 };
 
+// 프로덕션에서 서버 액션의 throw 는 메시지가 가려진다(digest만 노출) — AI 실패는
+// 사용자 잘못이 아니므로 던지지 않고 ok:false 로 돌려줘 위저드가 친절하게 안내한다.
+export type GoalSuggestionResult = ({ ok: true } & GoalSuggestion) | { ok: false; message: string };
+
 export async function suggestGoalPlan(payload: {
   title: string;
   areaName: string;
   weekCount: number;
   /** 사용자가 이미 고른 지표 — 주별 계획이 이 지표들을 향해 쓰이도록 프롬프트에 먹인다. */
   krs?: { title: string; target: number; unit: string; start?: number; cadence?: 'total' | 'weekly' }[];
-}): Promise<GoalSuggestion> {
+}): Promise<GoalSuggestionResult> {
   const { chatCompleteJson } = await import('./llm');
   const title = payload.title.trim().slice(0, 200);
-  if (!title) throw new Error('목표 제목이 비어 있습니다');
+  if (!title) return { ok: false, message: '목표 제목을 먼저 써주세요.' };
   const weekCount = Math.min(12, Math.max(1, Math.floor(payload.weekCount) || 6));
   const areaName = payload.areaName.trim().slice(0, 50);
   const chosenKrs = (payload.krs ?? [])
@@ -316,26 +330,33 @@ export async function suggestGoalPlan(payload: {
     ? 'weeks는 정확히 요청된 주 수만큼, 각 한 줄 25자 이내 — 반드시 확정된 지표의 숫자를 주 단위로 쪼개 구체적으로(예: "주 15km + 인터벌 1회"). 뻔한 일반론 금지.'
     : 'weeks는 정확히 요청된 주 수만큼, 각 한 줄 25자 이내, 앞 주는 준비·뒷 주는 마무리 흐름으로.';
 
-  const { content, engine, model } = await chatCompleteJson([
-    {
-      role: 'system',
-      content:
-        '너는 개인 목표 설계 코치다. 반드시 JSON 객체 하나만 출력한다. 다른 텍스트 금지. ' +
-        '형식: {"krs":[{"title":"지표 이름(명사형, 15자 이내)","target":숫자,"unit":"단위(회/개/km/점 등 3자 이내)"}],"weeks":["1주차 계획 한 줄", ...]}. ' +
-        `krs는 정확히 2~3개 — 숫자로 셀 수 있는 것만. ${weeksRule}`,
-    },
-    {
-      role: 'user',
-      content: `목표: "${title}"\n영역: ${areaName || '일반'}\n기간: ${weekCount}주${krLine}\n이 목표의 달성 판단 지표(krs)와 ${weekCount}주 주별 계획(weeks)을 JSON으로.`,
-    },
-  ]);
+  let llm: Awaited<ReturnType<typeof chatCompleteJson>>;
+  try {
+    llm = await chatCompleteJson([
+      {
+        role: 'system',
+        content:
+          '너는 개인 목표 설계 코치다. 반드시 JSON 객체 하나만 출력한다. 다른 텍스트 금지. ' +
+          '형식: {"krs":[{"title":"지표 이름(명사형, 15자 이내)","target":숫자,"unit":"단위(회/개/km/점 등 3자 이내)"}],"weeks":["1주차 계획 한 줄", ...]}. ' +
+          `krs는 정확히 2~3개 — 숫자로 셀 수 있는 것만. ${weeksRule}`,
+      },
+      {
+        role: 'user',
+        content: `목표: "${title}"\n영역: ${areaName || '일반'}\n기간: ${weekCount}주${krLine}\n이 목표의 달성 판단 지표(krs)와 ${weekCount}주 주별 계획(weeks)을 JSON으로.`,
+      },
+    ]);
+  } catch {
+    // 배포 서버엔 로컬 Ollama가 없고 Groq 키도 없으면 여기로 온다 — 수동 입력은 멀쩡하다.
+    return { ok: false, message: '지금은 AI 초안을 쓸 수 없어요. 직접 입력해도 충분해요.' };
+  }
+  const { content, engine, model } = llm;
 
   // LLM 출력은 외부 입력 — 구조를 엄격히 검증하고 넘치는 것은 자른다.
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
   } catch {
-    throw new Error('AI 응답을 해석하지 못했어요. 다시 시도해주세요.');
+    return { ok: false, message: 'AI 응답을 해석하지 못했어요. 다시 시도해주세요.' };
   }
   const obj = (typeof parsed === 'object' && parsed !== null ? parsed : {}) as {
     krs?: unknown;
@@ -359,8 +380,8 @@ export async function suggestGoalPlan(payload: {
     .map((w) => String(w ?? '').trim().replace(/^(\d+\s*주차?|주\s*\d+)\s*[:：)-]?\s*/, '').slice(0, 60))
     .slice(0, weekCount);
   // 지표·주별 계획 중 하나라도 건졌으면 성공 — 유령 초안(주별만 쓰는 쪽)이 지표 파싱 실패에 볼모 잡히지 않게.
-  if (krs.length === 0 && weeks.length === 0) throw new Error('쓸 만한 제안이 안 나왔어요. 다시 시도해주세요.');
-  return { krs, weeks, engine: engine === 'ollama' ? `로컬 AI(${model})` : `Groq(${model})` };
+  if (krs.length === 0 && weeks.length === 0) return { ok: false, message: '쓸 만한 제안이 안 나왔어요. 다시 시도해주세요.' };
+  return { ok: true, krs, weeks, engine: engine === 'ollama' ? `로컬 AI(${model})` : `Groq(${model})` };
 }
 
 // 계열화 제안: 위저드 검토 단계에서 호출 — 같은 영역의 최상위 활성 목표 중 대목표 후보를 AI가 고른다.

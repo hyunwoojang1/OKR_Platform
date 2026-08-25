@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { getToday, getOkrTree, streakOf } from '@/lib/queries';
-import { toggleTask, toggleHabitLog, createTask, togglePinEvent, sendJobCommand } from '@/lib/actions';
+import { toggleTask, toggleHabitLog, createTask, togglePinEvent, togglePinObjective, sendJobCommand } from '@/lib/actions';
 import type { CalendarEvent, JobPosting, SessionLog } from '@/lib/types';
 import { kstToday, krPct } from '@/lib/types';
 import AddTaskSheet from './AddTaskSheet';
@@ -69,13 +69,13 @@ export default async function TodayPage() {
   const todayT = new Date(`${today}T00:00:00+09:00`).getTime();
   const ddayOf = (dateStr: string) => Math.round((new Date(`${dateStr}T00:00:00+09:00`).getTime() - todayT) / 86400_000);
   const board = [
-    ...activeObjectives.filter((g) => g.due_date).map((g) => ({
+    ...activeObjectives.filter((g) => g.due_date && g.pinned).map((g) => ({
       key: `g-${g.id}`, kind: 'goal' as const, title: g.title, date: g.due_date!, dday: ddayOf(g.due_date!),
-      href: `/okr/${g.id}`, eventId: null as string | null,
+      href: `/okr/${g.id}`, eventId: null as string | null, objectiveId: g.id as string | null,
     })),
     ...pinnedEvents.map((e) => {
       const dateStr = new Date(new Date(e.starts_at).getTime() + 9 * 3600_000).toISOString().slice(0, 10);
-      return { key: `e-${e.id}`, kind: 'pin' as const, title: e.title, date: dateStr, dday: ddayOf(dateStr), href: null, eventId: e.id };
+      return { key: `e-${e.id}`, kind: 'pin' as const, title: e.title, date: dateStr, dday: ddayOf(dateStr), href: null, eventId: e.id, objectiveId: null as string | null };
     }),
   ]
     .filter((b) => b.dday >= 0)
@@ -145,10 +145,10 @@ export default async function TodayPage() {
         </div>
       </div>
 
-      {/* 1행: 할일(5) · 오늘 타임라인(4) · D-day+어제(3) */}
+      {/* 1행: 할일 · 오늘 타임라인 · D-day+어제 — 균등 3열 (QA: 카드 폭 통일) */}
       <div className="grid gap-4 lg:grid-cols-12">
         {/* 좌: 할일 (기존) */}
-        <section className="tile rise lg:col-span-5">
+        <section className="tile rise lg:col-span-4">
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="tile-title mb-0">오늘 할일</h2>
             <span className="t-cap">{doneTasks.length}/{t.tasks.length}</span>
@@ -286,7 +286,7 @@ export default async function TodayPage() {
         </section>
 
         {/* 우: D-day 보드 (위젯 1) + 어제의 나 (위젯 3) */}
-        <div className="space-y-4 lg:col-span-3">
+        <div className="space-y-4 lg:col-span-4">
           <section className="tile rise">
             <h2 className="tile-title">D-day</h2>
             {board.length === 0 ? (
@@ -311,6 +311,13 @@ export default async function TodayPage() {
                     {b.eventId && (
                       <form action={togglePinEvent}>
                         <input type="hidden" name="id" value={b.eventId} />
+                        <input type="hidden" name="pinned" value="false" />
+                        <button type="submit" aria-label="핀 해제" className="text-xs opacity-60 hover:opacity-100">📌</button>
+                      </form>
+                    )}
+                    {b.objectiveId && (
+                      <form action={togglePinObjective}>
+                        <input type="hidden" name="id" value={b.objectiveId} />
                         <input type="hidden" name="pinned" value="false" />
                         <button type="submit" aria-label="핀 해제" className="text-xs opacity-60 hover:opacity-100">📌</button>
                       </form>

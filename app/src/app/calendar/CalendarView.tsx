@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { createEvent, deleteEvent, sendJobCommand, syncCalendarNow, togglePinEvent } from '@/lib/actions';
 import type { CalendarEvent, JobPosting } from '@/lib/types';
 
@@ -39,15 +40,21 @@ function mondayOf(dateStr: string): string {
   d.setUTCDate(d.getUTCDate() - shift);
   return d.toISOString().slice(0, 10);
 }
+function addDaysKst(dateStr: string, n: number): string {
+  const d = new Date(new Date(`${dateStr}T00:00:00+09:00`).getTime() + 9 * 3600_000);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Seoul' });
 }
 
 export default function CalendarView({
-  month, today, events, jobs, logs, goals, syncLabel, syncConnected,
+  month, today, initialSelected, events, jobs, logs, goals, syncLabel, syncConnected,
 }: {
   month: string;
   today: string;
+  initialSelected: string;
   events: CalendarEvent[];
   jobs: JobPosting[];
   logs: LogLite[];
@@ -55,8 +62,21 @@ export default function CalendarView({
   syncLabel: string;
   syncConnected: boolean;
 }) {
-  const [selected, setSelected] = useState(month === today.slice(0, 7) ? today : `${month}-01`);
+  const router = useRouter();
+  const [selected, setSelected] = useState(initialSelected);
   const [focusGoal, setFocusGoal] = useState<string | null>(null);
+  // 디폴트 주간 — "이번 주에 뭘 해야 하나"가 점 대신 글자로 보이게 (QA 4번)
+  const [view, setView] = useState<'week' | 'month'>(() => {
+    try {
+      const v = localStorage.getItem('cal-view');
+      if (v === 'month' || v === 'week') return v;
+    } catch {}
+    return 'week';
+  });
+  function switchView(v: 'week' | 'month') {
+    setView(v);
+    try { localStorage.setItem('cal-view', v); } catch {}
+  }
   const [layers, setLayers] = useState<Layers>(() => {
     try {
       const saved = localStorage.getItem('cal-layers');
@@ -105,6 +125,20 @@ export default function CalendarView({
   const focus = goals.find((g) => g.id === focusGoal) ?? null;
   const focusWeeks = useMemo(() => new Set(focus?.weeks.map((w) => w.weekOf) ?? []), [focus]);
 
+  // 주간 뷰 재료: 선택일이 속한 주(월~일) + 날짜별 목표 마감
+  const goalDueByDate = useMemo(() => {
+    const m = new Map<string, GoalLite[]>();
+    for (const g of goals) if (g.dueDate) m.set(g.dueDate, [...(m.get(g.dueDate) ?? []), g]);
+    return m;
+  }, [goals]);
+  const weekMonday = mondayOf(selected);
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDaysKst(weekMonday, i));
+  function goWeek(delta: number) {
+    const m = addDaysKst(weekMonday, delta * 7);
+    if (m.slice(0, 7) === month) setSelected(m);
+    else router.push(`/calendar?m=${m.slice(0, 7)}&d=${m}`);
+  }
+
   const visibleJobs = (d: string) =>
     (jobsByDate.get(d) ?? []).filter((j) =>
       j.stage === '지원예정' ? layers.promoted : layers.collected,
@@ -128,7 +162,21 @@ export default function CalendarView({
         {/* ── 왼쪽: 달력 + 선택일 ── */}
         <div className="space-y-5">
           <header className="flex items-center justify-between">
-            <h1 className="t-large">달력</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="t-large">달력</h1>
+              <div className="flex rounded-full border p-0.5 text-[12px]" style={{ borderColor: 'var(--line-strong)' }}>
+                {(['week', 'month'] as const).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => switchView(v)}
+                    className="rounded-full px-3 py-1"
+                    style={view === v ? { background: 'var(--ink)', color: '#fff' } : { color: 'var(--ink-3)' }}
+                  >
+                    {v === 'week' ? '주' : '월'}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--ink-3)' }}>
               <div className="relative">
                 <button onClick={() => setLayersOpen(!layersOpen)} className="underline underline-offset-2">표시 ▾</button>
@@ -163,6 +211,81 @@ export default function CalendarView({
             </div>
           </header>
 
+          {/* ── 주간 뷰 (디폴트): 요일별 할 일이 점이 아니라 글자로 보인다 ── */}
+          {view === 'week' && (
+          <section className="tile !p-4">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <button onClick={() => goWeek(-1)} aria-label="이전 주" className="px-2 py-1 text-sm" style={{ color: 'var(--ink-3)' }}>←</button>
+              <span className="text-[15px] font-medium">
+                {Number(weekMonday.slice(5, 7))}/{Number(weekMonday.slice(8, 10))} – {Number(weekDays[6].slice(5, 7))}/{Number(weekDays[6].slice(8, 10))}
+              </span>
+              <button onClick={() => goWeek(1)} aria-label="다음 주" className="px-2 py-1 text-sm" style={{ color: 'var(--ink-3)' }}>→</button>
+            </div>
+            <div className="flex flex-col">
+              {weekDays.map((day, di) => {
+                const isToday = day === today;
+                const isSel = day === selected;
+                const dow = kstDow(day);
+                const evs = layers.events ? (evByDate.get(day) ?? []) : [];
+                const dJobs = visibleJobs(day);
+                const dues = goalDueByDate.get(day) ?? [];
+                const nLogs = layers.logs ? (logCountByDate.get(day) ?? 0) : 0;
+                const inFocusWeek = focus !== null && focusWeeks.has(mondayOf(day));
+                const empty = evs.length === 0 && dJobs.length === 0 && dues.length === 0 && nLogs === 0;
+                return (
+                  <div key={day}>
+                    {di > 0 && <div className="divider" />}
+                    <button
+                      onClick={() => setSelected(day)}
+                      className={`flex w-full items-start gap-3 rounded-xl px-1 py-2.5 text-left ${inFocusWeek ? 'goal-glow' : ''}`}
+                      style={inFocusWeek ? { background: 'var(--accent-bg-soft)' } : undefined}
+                    >
+                      <div className="w-10 shrink-0 text-center">
+                        <div className="mono text-[10px]" style={{ color: dow === 0 ? 'var(--urgent)' : 'var(--ink-3)' }}>{DAY_NAMES[dow]}</div>
+                        <div
+                          className="mono mx-auto flex h-7 w-7 items-center justify-center rounded-full text-[13px]"
+                          style={
+                            isSel
+                              ? { background: 'var(--ink)', color: '#fff' }
+                              : isToday
+                                ? { background: 'var(--accent-bg)', color: 'var(--accent-deep)', fontWeight: 500 }
+                                : undefined
+                          }
+                        >
+                          {Number(day.slice(8, 10))}
+                        </div>
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-1 pt-1">
+                        {evs.map((e) => (
+                          <div key={e.id} className="flex items-baseline gap-2 text-[13px]">
+                            <span className="mono shrink-0 text-[11px]" style={{ color: 'var(--ink-3)' }}>{e.all_day ? '종일' : fmtTime(e.starts_at)}</span>
+                            <span className="truncate">{e.pinned ? '📌 ' : ''}{e.title}</span>
+                          </div>
+                        ))}
+                        {dJobs.map((j) => (
+                          <div key={j.id} className="flex items-baseline gap-2 text-[13px]">
+                            <span className="mono shrink-0 text-[11px]" style={{ color: 'var(--urgent)' }}>마감</span>
+                            <span className="truncate font-medium">{j.company}</span>
+                          </div>
+                        ))}
+                        {dues.map((g) => (
+                          <div key={g.id} className="flex items-baseline gap-2 text-[13px]">
+                            <span className="mono shrink-0 text-[11px]" style={{ color: 'var(--urgent)' }}>목표</span>
+                            <span className="truncate">{g.title}</span>
+                          </div>
+                        ))}
+                        {nLogs > 0 && <div className="mono text-[11px]" style={{ color: 'oklch(0.55 0.11 150)' }}>기록 {nLogs}</div>}
+                        {empty && <div className="text-[12px]" style={{ color: 'var(--ink-4)' }}>—</div>}
+                      </div>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+          )}
+
+          {view === 'month' && (
           <section className="tile !p-4">
             <div className="mb-3 flex items-center justify-between px-1">
               <Link href={`/calendar?m=${prevM}`} aria-label="이전 달" className="px-2 py-1 text-sm" style={{ color: 'var(--ink-3)' }}>←</Link>
@@ -217,11 +340,12 @@ export default function CalendarView({
             </div>
             {focus && (
               <div className="mt-2 flex items-center justify-between rounded-xl px-3 py-2 text-[13px]" style={{ background: 'var(--accent-bg-soft)', color: 'var(--accent-deep)' }}>
-                <span>「{focus.title}」의 실행 주간이 빛나고 있어요{focus.dueDate ? ` · 마감 ${focus.dueDate.slice(5).replace('-', '/')}` : ''}</span>
+                <span>「{focus.title}」{focus.dueDate ? ` · 마감 ${focus.dueDate.slice(5).replace('-', '/')}` : ''}</span>
                 <button onClick={() => setFocusGoal(null)} className="underline underline-offset-2">해제</button>
               </div>
             )}
           </section>
+          )}
 
           {/* 선택한 날 */}
           <section className="space-y-2.5">
@@ -341,7 +465,7 @@ export default function CalendarView({
 
         {/* ── 오른쪽: 목표 패널 ── */}
         <aside className="space-y-2.5 md:pt-[52px]">
-          <div className="sec-label">목표 — 누르면 실행 주간이 달력에서 빛나요</div>
+          <div className="sec-label">목표</div>
           {goals.length === 0 && (
             <Link href="/okr/new" className="block rounded-2xl border border-dashed p-4 text-sm" style={{ borderColor: 'var(--line-strong)', color: 'var(--ink-3)' }}>
               아직 목표가 없어요 — 첫 목표 만들기 →

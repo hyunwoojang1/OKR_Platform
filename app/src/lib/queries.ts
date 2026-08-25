@@ -34,8 +34,8 @@ export type OkrTree = {
 };
 
 export async function getOkrTree(): Promise<OkrTree> {
-  const areas = await getAreas();
-  const [obj, ms, kr, ini] = await Promise.all([
+  const [areas, obj, ms, kr, ini] = await Promise.all([
+    getAreas(),
     db().from('objectives').select('*').neq('status', 'dropped').order('created_at'),
     db().from('milestones').select('*').neq('status', 'dropped').order('month'),
     db().from('key_results').select('*').order('created_at'),

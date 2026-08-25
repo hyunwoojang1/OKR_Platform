@@ -8,21 +8,19 @@ export const dynamic = 'force-dynamic';
 // v4 목표 목록: 목표당 카드 하나 — 영역 라벨 + 제목 + 사람 문장 + 진행 링 + 다음 마감 한 줄.
 // OKR 용어는 UI에서 퇴출 (REDESIGN_PLAN).
 export default async function OkrPage() {
-  const [areasQ, objQ, krQ, iniQ, evQ] = await Promise.all([
+  const [areasQ, objQ, krQ, iniQ] = await Promise.all([
     db().from('areas').select('*').eq('archived', false),
     db().from('objectives').select('*').eq('status', 'active').order('created_at'),
     db().from('key_results').select('*'),
     db().from('initiatives').select('*').eq('week_of', kstMonday()),
-    db().from('calendar_events').select('id').gte('starts_at', new Date().toISOString()).limit(100),
   ]);
-  for (const q of [areasQ, objQ, krQ, iniQ, evQ]) {
+  for (const q of [areasQ, objQ, krQ, iniQ]) {
     if (q.error) throw new Error(`목표 조회 실패: ${q.error.message}`);
   }
   const areas = areasQ.data as Area[];
   const objectives = objQ.data as Objective[];
   const krs = krQ.data as KeyResult[];
   const weekInis = iniQ.data as Initiative[];
-  const upcomingCount = (evQ.data ?? []).length;
   const areaById = new Map(areas.map((a) => [a.id, a]));
   const today = kstToday();
 
@@ -97,19 +95,19 @@ export default async function OkrPage() {
       })}
       </div>
 
-      <Link href="/okr/new" className="block">
-        <section
-          className="flex flex-col gap-1.5 rounded-2xl border border-dashed p-[18px]"
-          style={{ borderColor: 'var(--line-strong)' }}
-        >
-          <div className="text-[15px] font-medium" style={{ color: 'var(--ink-2)' }}>
-            {upcomingCount > 0 ? `마감 ${upcomingCount}건이 캘린더에 있어요` : '첫 목표를 세워보세요'}
-          </div>
-          <div className="text-[13px] leading-relaxed" style={{ color: 'var(--ink-3)' }}>
-            {objectives.length > 0 ? '이걸로 목표를 하나 더 만들 수 있습니다.' : '몇 가지 질문에 답하면 계획까지 잡아드려요.'}
-          </div>
-        </section>
-      </Link>
+      {objectives.length === 0 && (
+        <Link href="/okr/new" className="block">
+          <section
+            className="flex flex-col gap-1.5 rounded-2xl border border-dashed p-[18px]"
+            style={{ borderColor: 'var(--line-strong)' }}
+          >
+            <div className="text-[15px] font-medium" style={{ color: 'var(--ink-2)' }}>첫 목표를 세워보세요</div>
+            <div className="text-[13px] leading-relaxed" style={{ color: 'var(--ink-3)' }}>
+              몇 가지 질문에 답하면 계획까지 잡아드려요.
+            </div>
+          </section>
+        </Link>
+      )}
     </main>
   );
 }
