@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { createGoalPlan, normalizeKrDrafts, suggestGoalPlan } from '@/lib/actions';
 import type { Area } from '@/lib/types';
@@ -224,7 +224,6 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
   // 주별 계획 유령 초안: 빈칸에 흐릿하게 깔리고, Tab(또는 ✨ 탭)으로 그대로 채운다.
   const [weekGhosts, setWeekGhosts] = useState<string[]>([]);
   const [ghostPending, startGhostTransition] = useTransition();
-  const ghostRequested = useRef(false);
 
   const today = kstToday();
   const isCustomDueValid = !!customDue && customDue > today;
@@ -333,7 +332,6 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
         });
         // 주별 계획은 값으로 박지 않고 유령 초안으로만 — 다음 단계에서 Tab으로 수락한다.
         setWeekGhosts(plan.weeks);
-        ghostRequested.current = true;
         setAiNote(`${plan.engine}가 초안을 잡았어요 — 마음에 안 드는 건 고치거나 지우세요. 주별 계획 초안은 다음 단계에 흐릿하게 보여드려요.`);
       } catch {
         setAiError('지금은 AI 초안을 쓸 수 없어요. 직접 입력해도 충분해요.');
@@ -352,10 +350,10 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
     });
   }
 
-  // 주별 단계(4/4)에 들어오면 자동으로 AI 초안을 뒤에서 잡는다 — 버튼 없이, "소목표에서 턱 막히는" 지점 제거.
+  // 주별 단계(4/4)에 들어올 때마다 AI 초안을 새로 잡는다 — 지표를 고치고 돌아와도 초안이 따라온다.
+  // (QA: "한 번 하고 없어지는" UI 금지 — 이전엔 최초 1회 플래그로 잠겨서 재진입 시 초안이 죽어 있었다)
   useEffect(() => {
-    if (step !== 3 || ghostRequested.current || !title.trim()) return;
-    ghostRequested.current = true;
+    if (step !== 3 || !title.trim()) return;
     requestWeekGhosts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
@@ -713,19 +711,20 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
                 '비워둔 주는 건너뜁니다. 나중에 채워도 돼요.'
               )}
             </div>
-            {weekGhosts.length > 0 && !ghostPending && (
+            {!ghostPending && (
               <div className="flex flex-wrap gap-2">
                 {weeks.some((w, i) => !w.trim() && weekGhosts[i]) && (
                   <button onClick={acceptAllGhosts} className="chip pressable !text-[13px]" style={{ color: 'var(--accent-deep)', borderColor: 'var(--accent)' }}>
                     ✨ 초안 모두 채우기
                   </button>
                 )}
+                {/* 초안이 비어도 항상 남는다 — 한 번 지나가면 사라지는 UI 금지 (QA) */}
                 <button
                   onClick={() => { setWeekGhosts([]); requestWeekGhosts(); }}
                   className="chip pressable !text-[13px]"
                   style={{ color: 'var(--ink-3)' }}
                 >
-                  ↻ 초안 다시 받기
+                  {weekGhosts.length > 0 ? '↻ 초안 다시 받기' : '✨ AI 초안 받기'}
                 </button>
               </div>
             )}
