@@ -145,8 +145,8 @@ export default async function TodayPage() {
         </div>
       </div>
 
-      {/* 1행: 할일 · 오늘 타임라인 · D-day+어제 — 균등 3열 (QA: 카드 폭 통일) */}
-      <div className="grid gap-4 lg:grid-cols-12">
+      {/* 1행: 할일 · 오늘 타임라인 · D-day+어제 — 균등 분할 (QA: 카드 폭 통일, 좁은 창은 768px부터 2열) */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
         {/* 좌: 할일 (기존) */}
         <section className="tile rise lg:col-span-4">
           <div className="mb-2 flex items-baseline justify-between">
@@ -285,8 +285,8 @@ export default async function TodayPage() {
           </div>
         </section>
 
-        {/* 우: D-day 보드 (위젯 1) + 어제의 나 (위젯 3) */}
-        <div className="space-y-4 lg:col-span-4">
+        {/* 우: D-day 보드 (위젯 1) + 어제의 나 (위젯 3) — md에선 가로 2칸, lg에선 세로 스택 */}
+        <div className="grid gap-4 md:col-span-2 md:grid-cols-2 lg:col-span-4 lg:grid-cols-1">
           <section className="tile rise">
             <h2 className="tile-title">D-day</h2>
             {board.length === 0 ? (
@@ -353,7 +353,7 @@ export default async function TodayPage() {
       </div>
 
       {/* 2행: OKR 진척(기존) · 습관(기존) */}
-      <div className="grid gap-4 lg:grid-cols-12">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
         <section className="tile rise lg:col-span-8">
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="tile-title mb-0">목표 진척</h2>
