@@ -148,7 +148,7 @@ export default async function TodayPage() {
       {/* 1행: 할일 · 오늘 타임라인 · D-day+어제 — 균등 분할 (QA: 카드 폭 통일, 좁은 창은 768px부터 2열) */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
         {/* 좌: 할일 (기존) */}
-        <section className="tile rise lg:col-span-4">
+        <section className="tile rise min-w-0 lg:col-span-4">
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="tile-title mb-0">오늘 할일</h2>
             <span className="t-cap">{doneTasks.length}/{t.tasks.length}</span>
@@ -222,7 +222,7 @@ export default async function TodayPage() {
         </section>
 
         {/* 중: 오늘 타임라인 (위젯 8) */}
-        <section className="tile rise lg:col-span-4">
+        <section className="tile rise min-w-0 lg:col-span-4">
           <h2 className="tile-title">오늘 타임라인</h2>
           <div className="space-y-3.5">
             {dueJobs.map((j) => (
@@ -263,7 +263,7 @@ export default async function TodayPage() {
                           <span className="tl-dot" style={{ background: past ? '#C9C4B8' : 'var(--accent)' }} />
                           {i < timed.length - 1 && <span className="tl-line" />}
                         </div>
-                        <div className="flex flex-1 items-baseline gap-2 pb-3.5">
+                        <div className="flex min-w-0 flex-1 items-baseline gap-2 pb-3.5">
                           <span className="mono text-xs" style={{ color: past ? 'var(--ink-4)' : 'var(--ink-3)' }}>{tm}</span>
                           <span className="min-w-0 flex-1 truncate text-[13.5px]" style={past ? { color: 'var(--ink-4)' } : undefined}>{e.title}</span>
                         </div>
@@ -286,8 +286,8 @@ export default async function TodayPage() {
         </section>
 
         {/* 우: D-day 보드 (위젯 1) + 어제의 나 (위젯 3) — md에선 가로 2칸, lg에선 세로 스택 */}
-        <div className="grid gap-4 md:col-span-2 md:grid-cols-2 lg:col-span-4 lg:grid-cols-1">
-          <section className="tile rise">
+        <div className="grid min-w-0 gap-4 md:col-span-2 md:grid-cols-2 lg:col-span-4 lg:grid-cols-1">
+          <section className="tile rise min-w-0">
             <h2 className="tile-title">D-day</h2>
             {board.length === 0 ? (
               <p className="t-cap leading-relaxed">달력에서 일정에 📌을 찍거나 기한 있는 목표를 만들면 올라와요.</p>
@@ -328,7 +328,7 @@ export default async function TodayPage() {
             )}
           </section>
 
-          <section className="tile rise">
+          <section className="tile rise min-w-0">
             <h2 className="tile-title">어제의 나</h2>
             {yLogs.length === 0 ? (
               <p className="t-cap leading-relaxed">어제는 기록이 없었어요.<br />오늘 한 줄이면 충분해요.</p>
@@ -354,7 +354,7 @@ export default async function TodayPage() {
 
       {/* 2행: OKR 진척(기존) · 습관(기존) */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
-        <section className="tile rise lg:col-span-8">
+        <section className="tile rise min-w-0 lg:col-span-8">
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="tile-title mb-0">목표 진척</h2>
             <Link href="/okr" className="t-cap underline">전체 →</Link>
@@ -398,7 +398,7 @@ export default async function TodayPage() {
           </ul>
         </section>
 
-        <section className="tile rise lg:col-span-4">
+        <section className="tile rise min-w-0 lg:col-span-4">
           <h2 className="tile-title">습관</h2>
           <ul className="space-y-2">
             {t.habits.map((h) => {
