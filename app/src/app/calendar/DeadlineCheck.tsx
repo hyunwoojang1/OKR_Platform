@@ -66,9 +66,16 @@ export function EventOptions({
   return (
     <div className="mt-1.5 w-full space-y-2 rounded-xl border p-2"
       style={{ borderColor: 'var(--line-strong)', background: 'var(--surface)' }}>
+      {/*
+        '자동으로'(판정을 비워 규칙에 다시 맡기기) 버튼이 여기 있었는데 없앴다.
+        마감 판정은 이제 일정이 들어오는 순간 원본 제목("🔴 마감 — 회사")을 보고 내리고,
+        저장된 제목에서는 그 단서를 이미 뗐다. 그래서 "다시 규칙에 맡기기"는 되짚을 근거가
+        없는 상태에서 규칙을 돌리는 셈이 된다 — 실제로 확인해보니 진짜 마감 9건이
+        9건 모두 '마감 아님'으로 뒤집혔다. 100% 틀리는 버튼은 없는 편이 낫다.
+      */}
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="t-cap flex-1">
-          {guessed ? '제목을 보고 마감으로 봤어요' : '마감이 아닌 걸로 봤어요'}
+          {guessed ? '마감으로 보고 있어요' : '마감이 아닌 걸로 보고 있어요'}
         </span>
         <form action={setEventDeadline} className="flex gap-1.5">
           <input type="hidden" name="id" value={event.id} />
@@ -77,13 +84,6 @@ export function EventOptions({
             {guessed ? '마감 아님으로' : '마감으로'}
           </button>
         </form>
-        {manual && (
-          <form action={setEventDeadline}>
-            <input type="hidden" name="id" value={event.id} />
-            <input type="hidden" name="is_deadline" value="null" />
-            <button type="submit" className="t-cap underline" style={{ color: 'var(--ink-3)' }}>자동으로</button>
-          </form>
-        )}
       </div>
 
       {krs.length > 0 && (
