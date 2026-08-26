@@ -19,6 +19,47 @@ export type KeyResult = {
   cadence: 'total' | 'weekly';
 };
 
+/**
+ * 페이스 지표인지. 저장은 소수 분(6.27)으로 하되 사람에겐 6:16으로 보여준다 —
+ * 진행률 계산은 숫자라야 하고, 달리는 사람은 6.27분이라고 말하지 않기 때문.
+ */
+export function isPaceKr(kr: Pick<KeyResult, 'title'>): boolean {
+  return /페이스|pace/i.test(kr.title);
+}
+
+/** 6.2667 → "6:16". 초는 반올림하고, 60초가 되면 분으로 올린다. */
+export function fmtPace(minutes: number): string {
+  if (!Number.isFinite(minutes) || minutes <= 0) return '—';
+  let m = Math.floor(minutes);
+  let s = Math.round((minutes - m) * 60);
+  if (s === 60) { m += 1; s = 0; }
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** "6:16" → 6.2667. 그냥 숫자를 쳐도(6.5) 받아준다. 못 읽으면 null. */
+export function parsePace(text: string): number | null {
+  const s = text.trim();
+  const mmss = /^(\d{1,2})\s*[:'분]\s*(\d{1,2})/.exec(s);
+  if (mmss) {
+    const m = Number(mmss[1]);
+    const sec = Number(mmss[2]);
+    if (sec >= 60) return null;
+    return Math.round((m + sec / 60) * 10000) / 10000;
+  }
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** 화면에 찍을 단위. 페이스는 m:ss 자체가 분:초라 '분'을 또 붙이면 '6:00분'이 된다. */
+export function krUnit(kr: Pick<KeyResult, 'title' | 'unit'>): string {
+  return isPaceKr(kr) ? '' : kr.unit;
+}
+
+/** 화면에 찍을 지표 값 한 조각. 페이스면 m:ss, 아니면 숫자 그대로. */
+export function fmtKrValue(kr: Pick<KeyResult, 'title'>, value: number): string {
+  return isPaceKr(kr) ? fmtPace(value) : String(Number(value));
+}
+
 /** 지표 진행률(0~100). 시작값(줄이기 포함)·주기형을 모두 처리하는 단일 공식 — 모든 화면이 이걸 쓴다. */
 export function krPct(kr: Pick<KeyResult, 'start_value' | 'target_value' | 'current_value' | 'cadence'>): number {
   const start = kr.cadence === 'weekly' ? 0 : (kr.start_value ?? 0);

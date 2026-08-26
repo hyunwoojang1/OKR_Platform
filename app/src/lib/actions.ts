@@ -88,13 +88,50 @@ export async function syncKRsNow() {
 }
 
 export async function updateKRProgress(form: FormData) {
-  const value = Number(must(form.get('current_value'), '현재값'));
-  if (!Number.isFinite(value) || value < 0) throw new Error('현재값이 올바르지 않습니다');
-  await run('KR 갱신', () =>
-    db().from('key_results').update({ current_value: value }).eq('id', must(form.get('id'), 'KR')),
-  );
+  const id = must(form.get('id'), 'KR');
+  const raw = must(form.get('current_value'), '현재값');
+
+  // 페이스는 6:16처럼 적는 게 자연스럽다 — 저장은 소수 분으로, 입력은 둘 다 받는다.
+  const { data: kr } = await db().from('key_results').select('title').eq('id', id).maybeSingle();
+  const { isPaceKr, parsePace } = await import('./types');
+  let value: number | null;
+  if (kr && isPaceKr(kr as { title: string })) {
+    value = parsePace(raw);
+    if (value == null) throw new Error('페이스는 6:16 처럼 적어주세요');
+  } else {
+    value = Number(raw);
+    if (!Number.isFinite(value) || value < 0) throw new Error('현재값이 올바르지 않습니다');
+  }
+
+  await run('KR 갱신', () => db().from('key_results').update({ current_value: value }).eq('id', id));
   revalidatePath('/okr');
   revalidatePath('/');
+}
+
+/**
+ * 주 1회 재는 숫자(몸무게 등)를 홈에서 바로 적는다.
+ * 목표 화면 깊숙이 들어가야만 고칠 수 있어서 아무도 안 적던 값을, 재는 김에 남기게 하는 통로.
+ * 지표를 갱신하면서 기록도 함께 남긴다 — 지표는 지금 값만 알고 지난주 값을 모르기 때문.
+ */
+export async function recordWeeklyMetric(form: FormData) {
+  const id = must(form.get('id'), '지표');
+  const value = Number(must(form.get('value'), '값'));
+  if (!Number.isFinite(value) || value <= 0) throw new Error('숫자를 다시 확인해주세요');
+
+  const { data: kr, error } = await db()
+    .from('key_results').select('title,unit,current_value,objective_id').eq('id', id).maybeSingle();
+  if (error) throw new Error(`지표 조회 실패: ${error.message}`);
+  if (!kr) throw new Error('지표를 찾을 수 없습니다');
+
+  await run('지표 기록', () => db().from('key_results').update({ current_value: value }).eq('id', id));
+  await db().from('session_logs').insert({
+    objective_id: kr.objective_id,
+    kind: 'log',
+    note: `${kr.title} ${value}${kr.unit}`,
+    metrics: [{ v: value, u: kr.unit || '' }],
+  });
+  revalidatePath('/');
+  revalidatePath('/okr');
 }
 
 export async function createInitiative(form: FormData) {
@@ -177,6 +214,88 @@ export async function toggleTask(form: FormData) {
   }
   revalidatePath('/');
   revalidatePath('/calendar');
+  revalidatePath('/okr');
+}
+
+/** 할일 고치기 — 제목 오타·바뀐 마감·잘못 고른 영역을 지우고 새로 만들지 않고 바로잡는다. */
+export async function updateTask(form: FormData) {
+  const id = must(form.get('id'), '할일');
+  await run('할일 수정', () =>
+    db().from('daily_tasks').update({
+      title: must(form.get('title'), '제목'),
+      area_id: (form.get('area_id') as string)?.trim() || null,
+      due_date: (form.get('due_date') as string)?.trim() || null,
+    }).eq('id', id),
+  );
+  revalidatePath('/');
+}
+
+/** 할일 지우기. 딸린 완료 기록도 같이 치운다 — 없는 할일을 가리키는 기록만 남으면 타임라인이 거짓말을 한다. */
+export async function deleteTask(form: FormData) {
+  const id = must(form.get('id'), '할일');
+  await db().from('session_logs').delete().eq('task_id', id);
+  await run('할일 삭제', () => db().from('daily_tasks').delete().eq('id', id));
+  revalidatePath('/');
+  revalidatePath('/calendar');
+}
+
+/** 루틴 고치기 — 주 3회를 5회로 바꾸는 것처럼, 목표량은 살면서 바뀐다. */
+export async function updateHabit(form: FormData) {
+  const id = must(form.get('id'), '루틴');
+  const perWeek = Math.min(7, Math.max(1, Number(form.get('target_per_week') ?? 7) || 7));
+  await run('루틴 수정', () =>
+    db().from('habits').update({
+      title: must(form.get('title'), '제목'),
+      area_id: (form.get('area_id') as string)?.trim() || null,
+      target_per_week: perWeek,
+      cadence: perWeek >= 7 ? 'daily' : 'weekly',
+    }).eq('id', id),
+  );
+  revalidatePath('/');
+}
+
+/**
+ * 루틴 지우기. 체크 기록(habit_logs)은 함께 사라진다 —
+ * 지표가 그 기록을 세고 있었다면 숫자가 줄 수 있어서, 화면에서 미리 알린다.
+ */
+export async function deleteHabit(form: FormData) {
+  const id = must(form.get('id'), '루틴');
+  await db().from('habit_logs').delete().eq('habit_id', id);
+  await run('루틴 삭제', () => db().from('habits').delete().eq('id', id));
+  revalidatePath('/');
+}
+
+/** 잘못 남은 기록 한 줄 지우기. */
+export async function deleteLog(form: FormData) {
+  const id = must(form.get('id'), '기록');
+  const back = (form.get('redirect') as string)?.trim();
+  await run('기록 삭제', () => db().from('session_logs').delete().eq('id', id));
+  revalidatePath('/');
+  revalidatePath('/calendar');
+  if (back) revalidatePath(back);
+}
+
+/** 영역 이름·색 고치기. */
+export async function updateArea(form: FormData) {
+  const id = must(form.get('id'), '영역');
+  await run('영역 수정', () =>
+    db().from('areas').update({
+      name: must(form.get('name'), '영역명'),
+      color: must(form.get('color'), '컬러'),
+    }).eq('id', id),
+  );
+  revalidatePath('/');
+  revalidatePath('/settings');
+  revalidatePath('/okr');
+}
+
+/** 영역 보관(archive). 실제로 지우면 딸린 할일·목표의 색이 통째로 날아가서, 목록에서만 내린다. */
+export async function archiveArea(form: FormData) {
+  const id = must(form.get('id'), '영역');
+  const archived = form.get('archived') === 'true';
+  await run('영역 보관', () => db().from('areas').update({ archived }).eq('id', id));
+  revalidatePath('/');
+  revalidatePath('/settings');
   revalidatePath('/okr');
 }
 
