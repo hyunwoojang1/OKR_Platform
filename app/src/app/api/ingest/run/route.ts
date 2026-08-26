@@ -13,8 +13,18 @@ const RUN_WORDS = /러닝|달리기|조깅|run|뛰/i;
 const MAX_KM = 200;
 const MAX_MIN = 24 * 60;
 
+// 폰 단축어용 전용 키: 크론 마스터 시크릿을 폰에 심지 않기 위해 분리한다(권한도 이 라우트 한정).
+function ingestAuthorized(req: NextRequest): boolean {
+  const token = process.env.INGEST_TOKEN;
+  if (!token) return false;
+  if (req.headers.get('authorization') === `Bearer ${token}`) return true;
+  return req.nextUrl.searchParams.get('key') === token;
+}
+
 export async function POST(req: NextRequest) {
-  if (!cronAuthorized(req)) return new NextResponse('unauthorized', { status: 401 });
+  if (!ingestAuthorized(req) && !cronAuthorized(req)) {
+    return new NextResponse('unauthorized', { status: 401 });
+  }
 
   // 단축어는 JSON을 보낸다: { "km": 5.2, "minutes": 31 } (minutes 선택)
   let body: { km?: unknown; minutes?: unknown } = {};
