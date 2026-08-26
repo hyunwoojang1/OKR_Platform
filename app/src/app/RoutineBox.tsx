@@ -48,8 +48,11 @@ export default function RoutineBox({ date, habits, habitLogs, areas, dailyKrs, k
   const habitLogOf = (id: string) => habitLogs.find((l) => l.habit_id === id && l.date === date && l.done);
 
   const habitFilled = habits.filter((h) => weekCountOf(h.id, habitLogs) >= h.target_per_week).length;
-  const krFilled = dailyKrs.filter((k) => k.target_value != null && (krWeekDone[k.id] ?? 0) >= Number(k.target_value)).length;
-  const total = habits.length + dailyKrs.length;
+  // 목표치가 없는 지표(내용형 — "지원한 회사명" 처럼 적어서 쌓는 것)는 '채움' 이라는 개념이 없다.
+  // 분모에 넣으면 아무리 꾸준히 적어도 영원히 못 채운 것처럼 보인다.
+  const countable = dailyKrs.filter((k) => k.target_value != null);
+  const krFilled = countable.filter((k) => (krWeekDone[k.id] ?? 0) >= Number(k.target_value)).length;
+  const total = habits.length + countable.length;
 
   return (
     <section className="tile rise min-w-0">
@@ -90,7 +93,8 @@ export default function RoutineBox({ date, habits, habitLogs, areas, dailyKrs, k
                   <input type="hidden" name="habit_id" value={habit.id} />
                   <input type="hidden" name="date" value={date} />
                   <input type="hidden" name="done" value="true" />
-                  <button type="submit" className="chip pressable !py-0.5 !text-[11px]"
+                  <button type="submit" aria-label={`${habit.title} 오늘 했음`}
+                    className="chip pressable !py-0.5 !text-[11px]"
                     style={{ borderColor: color, color }}>＋ 오늘</button>
                 </form>
               )}

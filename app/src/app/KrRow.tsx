@@ -25,28 +25,32 @@ export default function KrRow({ kr, color, done, todayLogs }: {
   const [open, setOpen] = useState(false);
   const target = kr.target_value == null ? null : Number(kr.target_value);
   const filled = target != null && done >= target;
+  // 목표치가 없는 지표는 채운다는 개념이 없다. 점선 빈 칸으로 두면 "아직 못 했다"로 읽힌다.
+  const openEnded = target == null;
   const unit = krUnit(kr);
   const todayCount = todayLogs.length;
 
   const caption = filled
     ? kr.cadence === 'weekly' ? '이번 주 다 채웠어요' : '목표를 다 채웠어요'
-    : target == null
-      ? '적은 내용이 기록으로 쌓여요'
+    : openEnded
+      ? '정해진 개수 없이 쌓아가는 것'
       : `${Math.round((target - done) * 100) / 100}${unit} 더`;
 
   return (
     <li className="row flex-wrap" style={filled ? { opacity: 0.62 } : undefined}>
       <span className="row-bar" style={{ background: color }} />
 
-      {/* 왼쪽 = 상태. 목표를 채우면 켜진다. */}
+      {/* 왼쪽 = 상태. 목표를 채우면 켜진다. 목표가 없는 지표는 '쌓는 중' 을 뜻하는 점. */}
       <span
         className={`check ${filled ? 'on' : ''}`}
         aria-hidden
         style={filled
           ? { background: color, borderColor: color }
-          : { borderColor: 'var(--line-strong)', borderStyle: 'dashed' }}
+          : openEnded
+            ? { borderColor: color, color, fontSize: '15px', lineHeight: 1 }
+            : { borderColor: 'var(--line-strong)', borderStyle: 'dashed' }}
       >
-        {filled ? '✓' : ''}
+        {filled ? '✓' : openEnded ? '·' : ''}
       </span>
 
       <div className="min-w-0 flex-1">
@@ -67,11 +71,13 @@ export default function KrRow({ kr, color, done, todayLogs }: {
       {kr.input_mode === 'check' ? (
         <form action={logKrProgress} className="shrink-0">
           <input type="hidden" name="id" value={kr.id} />
-          <button type="submit" className="chip pressable !py-0.5 !text-[11px]"
+          <button type="submit" aria-label={`${kr.title} 오늘 한 번 더`}
+            className="chip pressable !py-0.5 !text-[11px]"
             style={{ borderColor: color, color }}>＋ 오늘</button>
         </form>
       ) : (
         <button type="button" onClick={() => setOpen(!open)}
+          aria-label={open ? `${kr.title} 기록 칸 닫기` : `${kr.title} 오늘 기록하기`}
           className="chip pressable shrink-0 !py-0.5 !text-[11px]"
           style={{ borderColor: color, color }}>
           {open ? '닫기' : '＋ 기록'}
@@ -104,7 +110,8 @@ export default function KrRow({ kr, color, done, todayLogs }: {
               style={{ borderColor: 'var(--line-strong)' }}
             />
           )}
-          <button type="submit" className="shrink-0 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium"
+          <button type="submit" aria-label={`${kr.title} 기록 저장`}
+            className="shrink-0 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium"
             style={{ background: 'var(--accent-bg)', color: 'var(--accent-deep)' }}>기록</button>
         </form>
       )}

@@ -111,8 +111,15 @@ export default async function TodayPage() {
   // ── 할일을 두 박스로 가른다 ──
   // 마감·제출에는 '곧' 인 것만 둔다. D-54 짜리가 마감 칸에 서 있으면
   // 정작 내일 마감인 것이 안 보인다.
+  // 위(D+7)만 막으면 아래가 뚫린다 — 몇 달 전에 지나간 미완료 할일이 영원히 마감 칸에 남아
+  // 정작 내일 마감인 게 묻힌다. 아래도 막고, 임박한 순으로 세운다.
   const DEADLINE_WINDOW_DAYS = 7;
-  const dueTasks = t.tasks.filter((x) => x.due_date && ddayOf(x.due_date) <= DEADLINE_WINDOW_DAYS);
+  const DEADLINE_OVERDUE_DAYS = 14;
+  const dueTasks = t.tasks
+    .filter((x) => x.due_date
+      && ddayOf(x.due_date) <= DEADLINE_WINDOW_DAYS
+      && ddayOf(x.due_date) >= -DEADLINE_OVERDUE_DAYS)
+    .sort((a, b) => (a.due_date ?? '').localeCompare(b.due_date ?? ''));
   const soonTasks = t.tasks.filter((x) => !dueTasks.includes(x));
 
   // ── 타임라인 재료 ──
@@ -148,7 +155,7 @@ export default async function TodayPage() {
           <p className="kpi-delta" style={{ color: signal(taskPct) }}>{doneTasks.length}/{t.tasks.length} 할일</p>
         </div>
         <div className="kpi">
-          <p className="kpi-label">루틴</p>
+          <p className="kpi-label">오늘 체크</p>
           <p className="kpi-value">{habitsChecked}/{t.habits.length}</p>
           <p className="kpi-delta" style={{ color: maxStreak > 0 ? 'var(--gold)' : 'var(--ink-3)' }}>
             {maxStreak > 0 ? `🔥 최장 ${maxStreak}일` : '오늘 체크 전'}
@@ -319,14 +326,14 @@ export default async function TodayPage() {
                             <form action={togglePinEvent} className="shrink-0">
                               <input type="hidden" name="id" value={b.eventId} />
                               <input type="hidden" name="pinned" value="false" />
-                              <button type="submit" aria-label="핀 해제" className="text-xs opacity-60 hover:opacity-100">📌</button>
+                              <button type="submit" aria-label={`${b.title} D-day 핀 해제`} className="text-xs opacity-60 hover:opacity-100">📌</button>
                             </form>
                           )}
                           {b.objectiveId && (
                             <form action={togglePinObjective} className="shrink-0">
                               <input type="hidden" name="id" value={b.objectiveId} />
                               <input type="hidden" name="pinned" value="false" />
-                              <button type="submit" aria-label="핀 해제" className="text-xs opacity-60 hover:opacity-100">📌</button>
+                              <button type="submit" aria-label={`${b.title} D-day 핀 해제`} className="text-xs opacity-60 hover:opacity-100">📌</button>
                             </form>
                           )}
                         </li>

@@ -88,6 +88,8 @@ export type DailyTask = {
   id: string; initiative_id: string | null; area_id: string | null; title: string; date: string;
   done: boolean; done_at: string | null; carried_over: number; due_date: string | null;
   source: 'manual' | 'initiative' | 'job_posting'; source_ref: string | null;
+  /** 이 할일을 끝내면 오른 지표. 010 마이그레이션에 있고 actions.ts 가 채우는데 타입에만 없었다. */
+  key_result_id: string | null;
 };
 export type Habit = {
   id: string; area_id: string | null; title: string; cadence: 'daily' | 'weekly';

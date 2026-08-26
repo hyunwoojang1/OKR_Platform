@@ -50,7 +50,11 @@ export default function DeadlineBox({ date, events, tasks, areas }: {
   tasks: DailyTask[];
   areas: Area[];
 }) {
-  const total = events.length + tasks.length;
+  // 달력 마감을 완료하면 할일 한 줄과 지표 기록 한 줄이 같이 생긴다(toggleEventDone).
+  // 둘 다 그리면 한 번 한 일을 두 곳에서 "해냈다"고 말하게 된다.
+  // 지표 기록 쪽이 무엇을 했는지까지 담으므로 그쪽('오늘 해낸 것')에 맡기고 여기선 감춘다.
+  const shown = tasks.filter((x) => !(x.done && x.source === 'job_posting' && x.key_result_id));
+  const total = events.length + shown.length;
   if (total === 0) return null;
 
   const areaOf = (id: string | null) => areas.find((a) => a.id === id);
@@ -87,7 +91,7 @@ export default function DeadlineBox({ date, events, tasks, areas }: {
           );
         })}
 
-        {tasks.map((task) => {
+        {shown.map((task) => {
           const area = areaOf(task.area_id);
           const shown = task.title;
           return (
