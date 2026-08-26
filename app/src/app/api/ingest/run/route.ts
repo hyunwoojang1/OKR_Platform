@@ -148,9 +148,30 @@ export async function POST(req: NextRequest) {
       if (!error) habitChecked = runHabit.title;
     }
 
+    // ── ⑤ 수고했다는 알림 (새로 기록된 거리가 있을 때만 — 중복 전송으로 알림 도배 금지) ──
+    let push: { sent: number; failed: number } | { error: string } | null = null;
+    if (deltaKm > 0) {
+      const distKr = krs.find((k) => RUN_WORDS.test(k.title) && (k.unit ?? '').toLowerCase().includes('km'));
+      const progress = distKr
+        ? ` · ${distKr.title} ${Math.round((Number(distKr.current_value) + deltaKm) * 100) / 100}/${distKr.target_value}${distKr.unit}`
+        : '';
+      try {
+        const { sendPushToAll } = await import('@/lib/push');
+        push = await sendPushToAll({
+          title: `오늘 ${km}km 뛰셨어요 🏃`,
+          body: `고생하셨습니다!${min ? ` ${min}분` : ''}${progress}`,
+          url: '/',
+          tag: 'run',
+        });
+      } catch (e) {
+        push = { error: e instanceof Error ? e.message : 'push 실패' };
+        console.error('러닝 푸시 실패:', e);
+      }
+    }
+
     return NextResponse.json({
       ok: true, km, addedKm: deltaKm > 0 ? deltaKm : 0, minutes: min,
-      updatedKrs: updated, taskDone, habitChecked,
+      updatedKrs: updated, taskDone, habitChecked, push,
       note: deltaKm > 0 ? undefined : '이미 반영된 거리 — 중복 누적 없음',
     });
   } catch (e) {
