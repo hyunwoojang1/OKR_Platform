@@ -41,3 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+# QA 하네스가 만드는 것 (락·누수 기록)
+.qa.lock
+.qa-leak-*.json
