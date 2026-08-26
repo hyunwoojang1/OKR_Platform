@@ -92,7 +92,7 @@ function fromGoogle(ev: GoogleEvent) {
   // 구글 달력에서 눈에 띄라고 붙인 표시지 읽을 내용이 아니다. 화면마다 따로 떼면
   // 반드시 어딘가 빠뜨린다(실제로 12곳에서 그리고 있었다). 시각은 starts_at 에 이미 있다.
   const raw = ev.summary ?? '';
-  const clean = cleanEventTitle(raw).title;
+  const clean = cleanEventTitle(raw);
   return {
     title: clean || '(제목 없음)',
     starts_at: startsAt,

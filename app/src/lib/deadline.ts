@@ -98,20 +98,33 @@ export function pickSeason(
   return byDate[0]?.id ?? null;
 }
 
+/** 앞머리 이모지 한 덩어리 (변형선택자·ZWJ 결합 포함). */
+const LEAD_EMOJI = String.raw`(?:[\p{Extended_Pictographic}\p{Regional_Indicator}️‍]+\s*)`;
+/** "🔴 마감 15:00 — " / "마감—" — 달력에서 눈에 띄라고 붙인 표시. */
+const DEADLINE_MARK = new RegExp(String.raw`^${LEAD_EMOJI}?마감\s*(?:\d{1,2}:\d{2})?\s*[—–-]\s*`, 'u');
+/** "📝 필기 — 금감원" 처럼 이모지 뒤에 진짜 내용이 오는 꼴. 이모지만 뗀다. */
+const LABELLED = new RegExp(String.raw`^${LEAD_EMOJI}(?=.{1,20}?\s*[—–-]\s)`, 'u');
+
 /**
  * 화면에 쓸 일정 제목.
  *
  * 구글 달력에는 "🔴 마감 15:00 — 우리자산운용 ETF솔루션 신입" 처럼 적혀 있다.
- * 그 앞머리는 달력에서 눈에 띄라고 붙인 것이지 읽을 내용이 아니다. 앱에서는 이미
+ * '🔴 마감 —' 은 달력에서 눈에 띄라고 붙인 표시지 읽을 내용이 아니고, 앱에서는 이미
  * '마감·제출' 칸에 들어가 있으니 두 번 말할 필요가 없다 — 회사 이름만 남긴다.
- * 시각은 버리지 않고 따로 돌려준다(caption 에 쓴다).
+ * 시각은 starts_at 에 이미 있으므로 버려도 된다.
+ *
+ * 다만 **필요한 것보다 더 지우지 않는다.** 앞의 이모지를 무조건 떼면
+ * "❤️ 기념일" 이 "기념일" 이 되고 "🔴 중요 회의" 가 "중요 회의" 가 된다.
+ * 사용자가 일부러 붙인 것까지 DB에서 지워버리는 셈이라, 손대는 건 두 꼴뿐이다:
+ *   ① 마감 표시가 붙은 것          "🔴 마감 15:00 — 회사"  → "회사"
+ *   ② 이모지 + 라벨 + 대시로 된 것   "📝 필기 — 금감원 1차"   → "필기 — 금감원 1차"
+ * 그 외에는 원문 그대로 둔다.
  */
-export function cleanEventTitle(raw: string): { title: string; time: string | null } {
+export function cleanEventTitle(raw: string): string {
   const source = (raw ?? '').trim();
-  let t = source.replace(/^[\p{Extended_Pictographic}️‍]+\s*/u, '');
-  const time = /^마감\s*(\d{1,2}:\d{2})/.exec(t)?.[1] ?? null;
-  t = t.replace(/^마감\s*(\d{1,2}:\d{2})?\s*[—–-]\s*/, '');
-  return { title: t.trim() || source, time };
+  const stripped = source.replace(DEADLINE_MARK, '').replace(LABELLED, '').trim();
+  // 전부 지워지는 입력(이모지만 있는 제목 등)은 원문을 지킨다.
+  return stripped || source;
 }
 
 /** 오늘 기준 D-day. 음수면 지난 것. */

@@ -457,7 +457,7 @@ export async function createEvent(form: FormData) {
   await run('일정 생성', () =>
     db().from('calendar_events').insert({
       // 구글에서 들어오는 것과 같은 규칙: 원본으로 마감 여부를 판정하고, 제목은 앞머리를 뗀다.
-      title: cleanEventTitle(rawTitle).title,
+      title: cleanEventTitle(rawTitle),
       is_deadline: isDeadlineEvent({ title: rawTitle, is_deadline: null }),
       starts_at: new Date(startsAt).toISOString(),
       ends_at: (form.get('ends_at') as string)?.trim() ? new Date(form.get('ends_at') as string).toISOString() : null,
