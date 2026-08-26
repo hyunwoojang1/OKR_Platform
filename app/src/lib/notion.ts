@@ -61,6 +61,18 @@ export function readTitle(p: NotionPage, name: string): string {
 export function readUrl(p: NotionPage, name: string): string {
   return (p.properties?.[name]?.url ?? '').trim();
 }
+/** rich_text 속성에서 URL 뽑기 — 걸린 링크(href)를 먼저 보고, 없으면 본문 텍스트를 본다. */
+export function readRichTextUrl(p: NotionPage, name: string): string {
+  const parts = (p.properties?.[name]?.rich_text ?? []) as any[];
+  const href = parts.find((x) => x?.href)?.href;
+  if (href) return String(href).trim();
+  const plain = parts.map((x) => x?.plain_text ?? '').join('').trim();
+  return /^https?:\/\//.test(plain) ? plain : '';
+}
+/** 클릭 가능한 앵커 텍스트 — 긴 URL 대신 "문제 링크"로 보이게 한다. */
+export function linkRichText(label: string, url: string) {
+  return { rich_text: [{ type: 'text', text: { content: label, link: { url } } }] };
+}
 export function readDate(p: NotionPage, name: string): string | null {
   return p.properties?.[name]?.date?.start ?? null;
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { cronAuthorized } from '@/lib/cron-guard';
 import { CODING_TAGS, classifyProblem, fetchProgrammersProblem, isProgrammersUrl } from '@/lib/coding';
-import { patchPage, queryDataSource, readDate, readMultiSelect, readTitle, readUrl } from '@/lib/notion';
+import { linkRichText, patchPage, queryDataSource, readDate, readMultiSelect, readRichTextUrl, readTitle } from '@/lib/notion';
 import type { KeyResult, Objective } from '@/lib/types';
 import { kstMonday, kstToday } from '@/lib/types';
 
@@ -58,19 +58,34 @@ async function run() {
   try {
     const rows = await queryDataSource(dsId);
 
-    // ── ① 링크만 있는 행 자동 채움 ──
+    // ── ① 링크만 넣은 행 자동 채움 ──
+    // 링크는 「문제」(제목) 칸에 붙여넣는 게 기본이다 — 노션에서 제목 칸은 항상 맨 앞이라
+    // 새 행 만들고 바로 붙여넣을 수 있다. 「링크」 칸에 넣어도 받아준다.
+    const urlOf = (r: (typeof rows)[number]) => {
+      const t = readTitle(r, '문제');
+      if (/^https?:\/\//.test(t)) return t;
+      return readRichTextUrl(r, '링크');
+    };
     const filled: string[] = [];
     const todo = rows
-      .filter((r) => !readTitle(r, '문제') && isProgrammersUrl(readUrl(r, '링크')))
+      .filter((r) => {
+        const u = urlOf(r);
+        if (!isProgrammersUrl(u)) return false;
+        // 제목이 아직 URL이거나 비어 있으면 = 아직 안 채워진 행
+        const t = readTitle(r, '문제');
+        return !t || /^https?:\/\//.test(t);
+      })
       .slice(0, FILL_LIMIT);
 
     for (const row of todo) {
-      const url = readUrl(row, '링크');
+      const url = urlOf(row);
       const info = await fetchProgrammersProblem(url);
       if (!info) continue;
       const tags = await classifyProblem(info.title, info.description);
       const props: Record<string, unknown> = {
         문제: { title: [{ text: { content: info.title } }] },
+        // 긴 URL 대신 클릭 가능한 "문제 링크"로 보이게 한다
+        링크: linkRichText('문제 링크', url),
         사이트: { select: { name: '프로그래머스' } },
         유형: { multi_select: tags.map((t) => ({ name: t })) },
       };
@@ -85,7 +100,11 @@ async function run() {
     // 되쓴 값을 반영해 다시 읽는다(방금 채운 행도 이번 집계에 포함되게).
     const fresh = filled.length > 0 ? await queryDataSource(dsId) : rows;
     const monday = kstMonday();
-    const solved = fresh.filter((r) => readTitle(r, '문제') && readDate(r, '날짜'));
+    // 아직 URL 그대로인 행(채우기 실패)은 집계에서 뺀다
+    const solved = fresh.filter((r) => {
+      const t = readTitle(r, '문제');
+      return t && !/^https?:\/\//.test(t) && readDate(r, '날짜');
+    });
     const weekRows = solved.filter((r) => (readDate(r, '날짜') ?? '') >= monday);
 
     const countAll = solved.length;
