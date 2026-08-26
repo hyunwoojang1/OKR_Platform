@@ -16,6 +16,20 @@ export const maxDuration = 60;
 const CODING_WORDS = /코테|코딩\s*테스트|알고리즘|문제\s*풀이|PS\b/i;
 const FILL_LIMIT = 8; // 한 번에 채울 행 수 — 페이지 크롤 + AI 호출이라 상한을 둔다
 
+async function withRetry<T>(
+  label: string,
+  fn: () => PromiseLike<{ data: T; error: { message: string } | null }>,
+): Promise<T> {
+  let last = '';
+  for (let i = 0; i < 3; i++) {
+    const r = await fn();
+    if (!r.error) return r.data;
+    last = r.error.message;
+    if (i < 2) await new Promise((res) => setTimeout(res, 400 * (i + 1)));
+  }
+  throw new Error(`${label} 실패: ${last}`);
+}
+
 function ingestAuthorized(req: NextRequest): boolean {
   const t = process.env.INGEST_TOKEN;
   if (!t) return false;
@@ -87,14 +101,13 @@ async function run() {
     }
 
     // ── ③ 지표 반영 ──
-    const [objQ, krQ] = await Promise.all([
-      db().from('objectives').select('id').eq('status', 'active'),
-      db().from('key_results').select('*'),
+    // Supabase가 간헐적으로 'JWT issued at future'(노드 시계 오차)를 뱉는다 — 짧게 재시도한다.
+    const [objRows, krRows] = await Promise.all([
+      withRetry('목표 조회', () => db().from('objectives').select('id').eq('status', 'active')),
+      withRetry('지표 조회', () => db().from('key_results').select('*')),
     ]);
-    if (objQ.error) throw new Error(`목표 조회 실패: ${objQ.error.message}`);
-    if (krQ.error) throw new Error(`지표 조회 실패: ${krQ.error.message}`);
-    const activeIds = new Set((objQ.data as Pick<Objective, 'id'>[]).map((o) => o.id));
-    const krs = (krQ.data as KeyResult[]).filter((k) => activeIds.has(k.objective_id) && k.source === 'manual');
+    const activeIds = new Set((objRows as Pick<Objective, 'id'>[]).map((o) => o.id));
+    const krs = (krRows as KeyResult[]).filter((k) => activeIds.has(k.objective_id) && k.source === 'manual');
 
     const updated: string[] = [];
     for (const kr of krs) {
