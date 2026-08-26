@@ -12,6 +12,23 @@ export const maxDuration = 30;
 const RUN_WORDS = /러닝|달리기|조깅|run|뛰/i;
 const MAX_KM = 200;
 const MAX_MIN = 24 * 60;
+const AUTO_TAG = '(건강앱 자동)';
+
+// Supabase가 간헐적으로 'JWT issued at future'(노드 시계 오차)를 뱉는다 — 자동 기록이
+// 그것 때문에 통째로 유실되면 안 되므로 짧게 재시도한다.
+async function withRetry<T>(
+  label: string,
+  fn: () => PromiseLike<{ data: T; error: { message: string } | null }>,
+): Promise<T> {
+  let lastMsg = '';
+  for (let i = 0; i < 3; i++) {
+    const r = await fn();
+    if (!r.error) return r.data;
+    lastMsg = r.error.message;
+    if (i < 2) await new Promise((res) => setTimeout(res, 400 * (i + 1)));
+  }
+  throw new Error(`${label} 실패: ${lastMsg}`);
+}
 
 // 폰 단축어용 전용 키: 크론 마스터 시크릿을 폰에 심지 않기 위해 분리한다(권한도 이 라우트 한정).
 function ingestAuthorized(req: NextRequest): boolean {
@@ -42,48 +59,67 @@ export async function POST(req: NextRequest) {
 
   try {
     const today = kstToday();
-    const [objQ, krQ, areaQ] = await Promise.all([
-      db().from('objectives').select('id,title,status').eq('status', 'active'),
-      db().from('key_results').select('*'),
-      db().from('areas').select('id,name').eq('archived', false),
-    ]);
-    for (const q of [objQ, krQ, areaQ]) {
-      if (q.error) throw new Error(`조회 실패: ${q.error.message}`);
-    }
-    const activeIds = new Set((objQ.data as Pick<Objective, 'id' | 'title' | 'status'>[]).map((o) => o.id));
-    const krs = (krQ.data as KeyResult[]).filter((k) => activeIds.has(k.objective_id));
-    const exerciseArea = (areaQ.data as { id: string; name: string }[]).find((a) => /운동|헬스|러닝/.test(a.name)) ?? null;
+    const dayStart = new Date(`${today}T00:00:00+09:00`).toISOString();
+    const dayEnd = new Date(new Date(dayStart).getTime() + 86400_000).toISOString();
 
-    // ── ② 러닝 지표 자동 누적 ──
-    // 거리형: 이름에 러닝 계열 + 단위 km → +뛴 km. 횟수형: 러닝 계열 + 단위 회 → +1.
+    const [objRows, krRows, areaRows, prevRows] = await Promise.all([
+      withRetry('목표 조회', () => db().from('objectives').select('id,title,status').eq('status', 'active')),
+      withRetry('지표 조회', () => db().from('key_results').select('*')),
+      withRetry('영역 조회', () => db().from('areas').select('id,name').eq('archived', false)),
+      // 오늘 이미 자동 기록된 값 — 단축어는 "오늘 하루 합계"를 보내므로 차이만 반영한다(중복 누적 방지)
+      withRetry('기존 기록 조회', () =>
+        db().from('session_logs').select('id,metrics')
+          .like('note', `%${AUTO_TAG}`).gte('logged_at', dayStart).lt('logged_at', dayEnd)
+          .order('logged_at', { ascending: false }).limit(1),
+      ),
+    ]);
+    const activeIds = new Set((objRows as Pick<Objective, 'id' | 'title' | 'status'>[]).map((o) => o.id));
+    const krs = (krRows as KeyResult[]).filter((k) => activeIds.has(k.objective_id));
+    const exerciseArea = (areaRows as { id: string; name: string }[]).find((a) => /운동|헬스|러닝/.test(a.name)) ?? null;
+
+    const prevLog = (prevRows as { id: string; metrics: { v: number; u: string }[] | null }[])[0] ?? null;
+    const prevKm = prevLog?.metrics?.find((m) => m.u === 'km')?.v ?? 0;
+    // 보낸 값이 오늘 누적 합계라는 전제 — 이미 반영된 만큼은 빼고 차이만 더한다.
+    const deltaKm = Math.round((km - prevKm) * 100) / 100;
+    const firstToday = prevLog === null;
+
+    // ── ② 러닝 지표 자동 반영 (증분만) ──
+    // 거리형: 이름에 러닝 계열 + 단위 km → +차이. 횟수형: 오늘 첫 기록일 때만 +1.
     const updated: string[] = [];
-    for (const kr of krs) {
-      if (!RUN_WORDS.test(kr.title)) continue;
-      const unit = (kr.unit ?? '').toLowerCase();
-      let delta = 0;
-      if (unit.includes('km')) delta = km;
-      else if (unit === '회' || unit === '번') delta = 1;
-      else continue;
-      const next = Math.round((Number(kr.current_value) + delta) * 100) / 100;
-      const { error } = await db().from('key_results').update({ current_value: next }).eq('id', kr.id);
-      if (!error) updated.push(`${kr.title} ${kr.current_value}→${next}${kr.unit}`);
+    if (deltaKm > 0) {
+      for (const kr of krs) {
+        if (!RUN_WORDS.test(kr.title)) continue;
+        const unit = (kr.unit ?? '').toLowerCase();
+        let delta = 0;
+        if (unit.includes('km')) delta = deltaKm;
+        else if ((unit === '회' || unit === '번') && firstToday) delta = 1;
+        else continue;
+        const next = Math.round((Number(kr.current_value) + delta) * 100) / 100;
+        const { error } = await db().from('key_results').update({ current_value: next }).eq('id', kr.id);
+        if (!error) updated.push(`${kr.title} ${kr.current_value}→${next}${kr.unit}`);
+      }
     }
 
     // 로그를 어느 목표 타임라인에 붙일지: 방금 갱신된 지표의 목표 우선
     const firstUpdatedKr = krs.find((k) => updated.some((u) => u.startsWith(k.title)));
     const objectiveId = firstUpdatedKr?.objective_id ?? null;
 
-    // ── ① 세션 로그 ──
-    const note = `러닝 ${km}km${min ? ` · ${min}분` : ''} 🏃 (건강앱 자동)`;
+    // ── ① 세션 로그 (하루 한 줄 — 다시 보내면 그 줄을 최신 합계로 갱신) ──
+    const note = `러닝 ${km}km${min ? ` · ${min}분` : ''} 🏃 ${AUTO_TAG}`;
     const metrics = [{ v: km, u: 'km' }, ...(min ? [{ v: min, u: '분' }] : [])];
-    const { error: logErr } = await db().from('session_logs').insert({
-      objective_id: objectiveId,
-      area_id: exerciseArea?.id ?? null,
-      kind: 'log',
-      note,
-      metrics,
-    });
-    if (logErr) throw new Error(`로그 저장 실패: ${logErr.message}`);
+    if (prevLog) {
+      const { error } = await db().from('session_logs').update({ note, metrics }).eq('id', prevLog.id);
+      if (error) throw new Error(`로그 갱신 실패: ${error.message}`);
+    } else {
+      const { error } = await db().from('session_logs').insert({
+        objective_id: objectiveId,
+        area_id: exerciseArea?.id ?? null,
+        kind: 'log',
+        note,
+        metrics,
+      });
+      if (error) throw new Error(`로그 저장 실패: ${error.message}`);
+    }
 
     // ── ③ 오늘 할일 '러닝' 자동 체크 (열려 있는 것만, 중복 로그는 안 남긴다) ──
     let taskDone: string | null = null;
@@ -108,7 +144,11 @@ export async function POST(req: NextRequest) {
       if (!error) habitChecked = runHabit.title;
     }
 
-    return NextResponse.json({ ok: true, km, minutes: min, updatedKrs: updated, taskDone, habitChecked });
+    return NextResponse.json({
+      ok: true, km, addedKm: deltaKm > 0 ? deltaKm : 0, minutes: min,
+      updatedKrs: updated, taskDone, habitChecked,
+      note: deltaKm > 0 ? undefined : '이미 반영된 거리 — 중복 누적 없음',
+    });
   } catch (e) {
     console.error('ingest/run 실패:', e);
     return NextResponse.json({ error: e instanceof Error ? e.message : 'unknown' }, { status: 500 });
