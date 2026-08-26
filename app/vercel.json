@@ -3,6 +3,7 @@
   "crons": [
     { "path": "/api/cron/morning-briefing", "schedule": "0 22 * * *" },
     { "path": "/api/cron/evening-reminder", "schedule": "0 12 * * *" },
-    { "path": "/api/cron/weekly-reset", "schedule": "0 15 * * 0" }
+    { "path": "/api/cron/weekly-reset", "schedule": "0 15 * * 0" },
+    { "path": "/api/ingest/coding", "schedule": "0 13 * * *" }
   ]
 }
