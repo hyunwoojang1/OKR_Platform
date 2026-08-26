@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { db } from './db';
 import { kstToday, kstQuarter, kstMonday } from './types';
+import { CERT_NAMES } from './deadline';
 
 // 모든 액션 공통: 입력을 서버에서 검증하고(빈 문자열 거부), 실패는 명시적으로 던진다.
 function must(v: FormDataEntryValue | null, name: string): string {
@@ -485,6 +486,221 @@ export async function deleteEvent(form: FormData) {
   revalidatePath('/calendar');
   revalidatePath('/');
   if (failed.length > 0) throw new Error(`${failed.length}건은 구글에서 지우지 못해 그대로 두었습니다`);
+}
+
+/**
+ * 달력 마감을 해냈다고 찍는다 — 마감일이 아직 안 왔어도 지금 누를 수 있다.
+ * "다음 주까지 낼 서류를 오늘 다 냈는데 마감일까지 기다려야 하는 건 말이 안 된다"가 요구였다.
+ *
+ * 한 번 누르면 세 가지가 같이 일어난다.
+ *   ① 일정에 완료 표시(취소선) — 달력에서 바로 보인다
+ *   ② 오늘 할일에 완료된 채로 들어감 — 오늘 한 일이니까
+ *   ③ 연결된 지표가 오름 + 기록에 남음 — "자소서 제출 3/12 → 4/12"
+ */
+export async function toggleEventDone(form: FormData) {
+  const id = must(form.get('id'), '일정');
+  const done = form.get('done') === 'true';
+
+  const { data: ev, error } = await db()
+    .from('calendar_events').select('id,title,done_at,key_result_id').eq('id', id).maybeSingle();
+  if (error) throw new Error(`일정 조회 실패: ${error.message}`);
+  if (!ev) throw new Error('일정을 찾을 수 없습니다');
+
+  if (!done) {
+    // 되돌리기 — 딸려 만들어진 할일과 기록도 같이 치운다
+    const { data: tasks } = await db().from('daily_tasks').select('id').eq('source_ref', id).eq('source', 'job_posting');
+    for (const t of tasks ?? []) {
+      await db().from('session_logs').delete().eq('task_id', t.id);
+      await db().from('daily_tasks').delete().eq('id', t.id);
+    }
+    await run('완료 해제', () => db().from('calendar_events').update({ done_at: null }).eq('id', id));
+    revalidatePath('/');
+    revalidatePath('/calendar');
+    return;
+  }
+
+  const today = kstToday();
+  await run('일정 완료', () => db().from('calendar_events').update({ done_at: new Date().toISOString() }).eq('id', id));
+
+  // ② 오늘 할일에 완료된 채로 — 같은 일정으로 두 번 만들지 않는다
+  const { data: exists } = await db()
+    .from('daily_tasks').select('id').eq('source_ref', id).eq('date', today).maybeSingle();
+  if (!exists) {
+    // due_date를 넣어야 '마감·제출' 구역으로 간다(없으면 '그 외'로 떨어진다)
+    const { data: full } = await db().from('calendar_events').select('starts_at').eq('id', id).maybeSingle();
+    const dueDate = full
+      ? new Date(new Date(full.starts_at).getTime() + 9 * 3600_000).toISOString().slice(0, 10)
+      : today;
+    await db().from('daily_tasks').insert({
+      title: ev.title,
+      date: today,
+      done: true,
+      done_at: new Date().toISOString(),
+      due_date: dueDate,
+      source: 'job_posting',
+      source_ref: id,
+      key_result_id: ev.key_result_id,
+    });
+  }
+
+  // ③ 연결된 지표가 있으면 올리고 기록도 남긴다
+  if (ev.key_result_id) {
+    const { data: kr } = await db()
+      .from('key_results').select('id,title,unit,current_value,objective_id,step').eq('id', ev.key_result_id).maybeSingle();
+    if (kr) {
+      const delta = Number(kr.step) || 1;
+      const next = Math.round((Number(kr.current_value) + delta) * 100) / 100;
+      await db().from('key_results').update({ current_value: next }).eq('id', kr.id);
+      await db().from('session_logs').insert({
+        objective_id: kr.objective_id,
+        key_result_id: kr.id,
+        kind: 'check',
+        note: ev.title,
+        metrics: [{ v: delta, u: kr.unit || '' }],
+      });
+    }
+  } else {
+    await db().from('session_logs').insert({ kind: 'check', note: ev.title });
+  }
+
+  revalidatePath('/');
+  revalidatePath('/calendar');
+  revalidatePath('/okr');
+}
+
+/** 이게 마감이 맞는지 손으로 정한다 — 제목 규칙이 틀렸을 때의 탈출구. */
+export async function setEventDeadline(form: FormData) {
+  const id = must(form.get('id'), '일정');
+  const raw = (form.get('is_deadline') as string) ?? '';
+  const value = raw === 'null' ? null : raw === 'true';
+  await run('마감 표시', () => db().from('calendar_events').update({ is_deadline: value }).eq('id', id));
+  revalidatePath('/calendar');
+  revalidatePath('/');
+}
+
+/** 이 일정을 끝내면 어느 지표가 오를지 연결한다. */
+export async function setEventKr(form: FormData) {
+  const id = must(form.get('id'), '일정');
+  const krId = ((form.get('key_result_id') as string) ?? '').trim() || null;
+  await run('지표 연결', () => db().from('calendar_events').update({ key_result_id: krId }).eq('id', id));
+  revalidatePath('/calendar');
+  revalidatePath('/');
+}
+
+// ── 시즌: 지난 마감이 모이는 서랍 ──
+//
+// 왜 필요한가: 마감은 끝나면 달력 뒤편으로 사라진다. 그런데 "올 하반기에 몇 군데 넣었지"는
+// 계속 되묻게 되는 질문이다. 시즌은 지난 마감을 사용자가 정한 이름의 폴더로 모아
+// 지원 이력이 되게 한다.
+//
+// 폴더를 가르는 기준은 키워드가 먼저, 기간이 나중이다(deadline.ts pickSeason).
+// 공채(8~10월)와 자격증(9월)이 날짜로 겹치기 때문에 날짜만으로는 못 가른다.
+
+/** "마감, 공채 , ,신입" → ['마감','공채','신입'] — 쉼표·줄바꿈 아무거나 받는다. */
+function parseKeywords(v: FormDataEntryValue | null): string[] {
+  const raw = typeof v === 'string' ? v : '';
+  const out: string[] = [];
+  for (const k of raw.split(/[,\n]/)) {
+    const s = k.trim();
+    if (s && s.length <= 60 && !out.includes(s)) out.push(s);
+  }
+  if (out.length > 200) throw new Error('키워드가 너무 많습니다 (200개까지)');
+  return out;
+}
+
+/** 시즌의 날짜 칸은 비워둘 수 있다 — '자격증'처럼 기간이 없고 이름으로만 갈리는 폴더가 있다. */
+function optionalDate(v: FormDataEntryValue | null, name: string): string | null {
+  const s = typeof v === 'string' ? v.trim() : '';
+  if (!s) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new Error(`${name} 날짜 형식이 올바르지 않습니다`);
+  return s;
+}
+
+function revalidateSeasons() {
+  revalidatePath('/deadlines');
+  revalidatePath('/calendar');
+}
+
+export async function createSeason(form: FormData) {
+  const starts = optionalDate(form.get('starts_on'), '시작');
+  const ends = optionalDate(form.get('ends_on'), '종료');
+  if (starts && ends && starts > ends) throw new Error('시작이 종료보다 늦습니다');
+  await run('시즌 생성', () =>
+    db().from('seasons').insert({
+      name: must(form.get('name'), '시즌 이름'),
+      starts_on: starts,
+      ends_on: ends,
+      keywords: parseKeywords(form.get('keywords')),
+      sort_order: Number(form.get('sort_order')) || 0,
+    }),
+  );
+  revalidateSeasons();
+}
+
+export async function updateSeason(form: FormData) {
+  const id = must(form.get('id'), '시즌');
+  const starts = optionalDate(form.get('starts_on'), '시작');
+  const ends = optionalDate(form.get('ends_on'), '종료');
+  if (starts && ends && starts > ends) throw new Error('시작이 종료보다 늦습니다');
+  await run('시즌 수정', () =>
+    db().from('seasons').update({
+      name: must(form.get('name'), '시즌 이름'),
+      starts_on: starts,
+      ends_on: ends,
+      keywords: parseKeywords(form.get('keywords')),
+    }).eq('id', id),
+  );
+  revalidateSeasons();
+}
+
+/**
+ * 시즌만 지운다. 일정은 안 지운다 —
+ * season_id는 on delete set null이라 자동 배정(키워드·기간)으로 돌아갈 뿐이다.
+ */
+export async function deleteSeason(form: FormData) {
+  const id = must(form.get('id'), '시즌');
+  await run('시즌 삭제', () => db().from('seasons').delete().eq('id', id));
+  revalidateSeasons();
+}
+
+/**
+ * 이 마감을 어느 폴더에 넣을지 손으로 정한다.
+ * 빈 값이면 지정을 풀고 자동 배정(키워드 → 기간)으로 되돌린다.
+ */
+export async function setEventSeason(form: FormData) {
+  const id = must(form.get('id'), '일정');
+  const seasonId = ((form.get('season_id') as string) ?? '').trim() || null;
+  await run('시즌 이동', () => db().from('calendar_events').update({ season_id: seasonId }).eq('id', id));
+  revalidateSeasons();
+}
+
+/**
+ * 처음 쓰는 사람을 위한 시즌 두 개.
+ *
+ * 왜 하필 '공채'와 '자격증'인가: 달력에 실제로 섞여 있는 두 종류이고,
+ * '필기'·'접수'·'발표' 같은 행위 단어가 양쪽에 똑같이 쓰여서 날짜로는 원리적으로 못 가른다.
+ * 갈리는 건 대상이 회사냐 자격증이냐뿐이라, 자격증 쪽에 이름 사전을 통째로 넣어준다.
+ */
+export async function seedSeasons() {
+  const { data: existing } = await db().from('seasons').select('id').limit(1);
+  if (existing && existing.length > 0) throw new Error('이미 시즌이 있습니다');
+
+  const today = kstToday();
+  const year = Number(today.slice(0, 4));
+  const isSecondHalf = Number(today.slice(5, 7)) >= 7;
+  const half = isSecondHalf
+    ? { name: `${year} 하반기 공채`, starts_on: `${year}-07-01`, ends_on: `${year}-12-31` }
+    : { name: `${year} 상반기 공채`, starts_on: `${year}-01-01`, ends_on: `${year}-06-30` };
+
+  await run('시즌 생성', () =>
+    db().from('seasons').insert([
+      // 자격증이 먼저다. 키워드가 기간보다 먼저 판정되므로 순서 자체는 결과를 안 바꾸지만,
+      // 목록에서 좁은 폴더가 위에 오는 편이 읽기 쉽다.
+      { name: '자격증', starts_on: null, ends_on: null, keywords: CERT_NAMES, sort_order: 0 },
+      { ...half, keywords: ['마감', '공채', '신입', '채용'], sort_order: 1 },
+    ]),
+  );
+  revalidateSeasons();
 }
 
 // D-day 보드 핀: 달력 일정에 📌 → 홈 카운트다운 등재/해제

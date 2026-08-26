@@ -3,6 +3,7 @@ import { syncCalendar } from '@/lib/google-calendar';
 import type { Area, CalendarEvent, Initiative, JobPosting, KeyResult, Objective, SessionLog } from '@/lib/types';
 import { kstToday } from '@/lib/types';
 import CalendarView, { type GoalLite, type LogLite } from './CalendarView';
+import type { KrLite } from './DeadlineCheck';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,6 +66,16 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
     };
   });
 
+  // 일정에 걸 수 있는 지표는 살아있는 목표의 것만 — 끝난 목표를 고르게 두면 헷갈리기만 한다.
+  const krLites: KrLite[] = krs
+    .filter((k) => objectives.some((o) => o.id === k.objective_id))
+    .map((k) => ({
+      id: k.id,
+      title: k.title,
+      unit: k.unit ?? '',
+      goal: objectives.find((o) => o.id === k.objective_id)?.title ?? '목표',
+    }));
+
   const logs: LogLite[] = (logsQ.data as SessionLog[]).map((l) => ({
     id: l.id, kind: l.kind, note: l.note, metrics: l.metrics, logged_at: l.logged_at, objective_id: l.objective_id,
   }));
@@ -78,6 +89,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
       jobs={jobsQ.data as JobPosting[]}
       logs={logs}
       goals={goals}
+      krs={krLites}
       syncLabel={sync.connected && !sync.error ? 'Google 연동됨' : sync.error ?? 'Google 미연결'}
       syncConnected={sync.connected}
     />

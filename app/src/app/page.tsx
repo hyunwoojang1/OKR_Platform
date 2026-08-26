@@ -186,6 +186,7 @@ export default async function TodayPage() {
           dailyKrs={t.dailyKrs}
           krWeekDone={t.krWeekDone}
           krTodayLogs={t.krTodayLogs}
+          dueEvents={t.dueEvents}
         />
 
         {/* 중: 오늘 타임라인 (위젯 8) */}

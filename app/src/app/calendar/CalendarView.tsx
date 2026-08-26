@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createEvent, sendJobCommand, syncCalendarNow, togglePinEvent } from '@/lib/actions';
 import { CleanupMode, DeleteEventButton } from './EventCleanup';
+import { EventCheck, EventOptions, type KrLite } from './DeadlineCheck';
+import { isDeadlineEvent } from '@/lib/deadline';
 import type { CalendarEvent, JobPosting } from '@/lib/types';
 
 export type GoalLite = {
@@ -51,7 +53,7 @@ function fmtTime(iso: string): string {
 }
 
 export default function CalendarView({
-  month, today, initialSelected, events, jobs, logs, goals, syncLabel, syncConnected,
+  month, today, initialSelected, events, jobs, logs, goals, krs, syncLabel, syncConnected,
 }: {
   month: string;
   today: string;
@@ -60,6 +62,7 @@ export default function CalendarView({
   jobs: JobPosting[];
   logs: LogLite[];
   goals: GoalLite[];
+  krs: KrLite[];
   syncLabel: string;
   syncConnected: boolean;
 }) {
@@ -208,6 +211,7 @@ export default function CalendarView({
                 )}
               </div>
               <Link href="/jobs" className="underline underline-offset-2">공고 →</Link>
+              <Link href="/deadlines" className="underline underline-offset-2">지난 마감 →</Link>
               <span className="hidden sm:inline">{syncLabel}</span>
               {syncConnected && (
                 <form action={syncCalendarNow}>
@@ -266,7 +270,8 @@ export default function CalendarView({
                         {evs.map((e) => (
                           <div key={e.id} className="flex items-baseline gap-2 text-[13px]">
                             <span className="mono shrink-0 text-[11px]" style={{ color: 'var(--ink-3)' }}>{e.all_day ? '종일' : fmtTime(e.starts_at)}</span>
-                            <span className="truncate">{e.pinned ? '📌 ' : ''}{e.title}</span>
+                            <span className={`truncate ${e.done_at ? 'line-through' : ''}`}
+                              style={e.done_at ? { color: 'var(--ink-4)' } : undefined}>{e.done_at ? '✓ ' : ''}{e.pinned ? '📌 ' : ''}{e.title}</span>
                           </div>
                         ))}
                         {dJobs.map((j) => (
@@ -370,9 +375,12 @@ export default function CalendarView({
                 {dayEvents.map((e, i) => (
                   <div key={e.id}>
                     {i > 0 && <div className="divider mx-4" />}
-                    <div className="flex items-center gap-3 px-4 py-[13px]">
+                    <div className="flex flex-wrap items-center gap-3 px-4 py-[13px]">
+                      <EventCheck event={e} isDeadline={isDeadlineEvent(e)} />
                       <span className="mono w-11 text-xs" style={{ color: 'var(--ink-3)' }}>{e.all_day ? '종일' : fmtTime(e.starts_at)}</span>
-                      <span className="flex-1 text-[15px] leading-normal">{e.title}</span>
+                      <span className={`flex-1 text-[15px] leading-normal ${e.done_at ? 'line-through' : ''}`}
+                        style={e.done_at ? { color: 'var(--ink-3)' } : undefined}>{e.title}</span>
+                      <EventOptions event={e} guessed={isDeadlineEvent(e)} krs={krs} />
                       {/* 📌 = 홈 D-day 보드 등재 */}
                       <form action={togglePinEvent}>
                         <input type="hidden" name="id" value={e.id} />
@@ -433,7 +441,7 @@ export default function CalendarView({
                       <div className="min-w-0 flex-1">
                         <span className="text-[14px]">{l.note ?? '(내용 없음)'}</span>
                         {l.kind !== 'log' && (
-                          <span className="mono ml-1.5 text-[10px]" style={{ color: 'var(--ink-4)' }}>{l.kind === 'check' ? '완료' : '회고'}</span>
+                          <span className="mono ml-1.5 whitespace-nowrap text-[10px]" style={{ color: 'var(--ink-4)' }}>{l.kind === 'check' ? '완료' : '회고'}</span>
                         )}
                         {l.objective_id && goalTitleById.get(l.objective_id) && (
                           <div className="truncate text-[11px]" style={{ color: 'var(--ink-4)' }}>{goalTitleById.get(l.objective_id)}</div>

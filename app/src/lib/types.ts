@@ -97,6 +97,19 @@ export type HabitLog = { id: string; habit_id: string; date: string; done: boole
 export type CalendarEvent = {
   id: string; google_event_id: string | null; title: string; starts_at: string; ends_at: string | null;
   all_day: boolean; source: 'app' | 'google'; sync_status: string; pinned: boolean;
+  /** 해냈다고 찍은 시각. 마감일 전이라도 미리 찍을 수 있다. */
+  done_at?: string | null;
+  /** 내가 뭔가 해야 하는 일정인가. null이면 제목 규칙으로 짐작, true/false는 손으로 정한 것 */
+  is_deadline?: boolean | null;
+  /** 끝냈을 때 올릴 지표 */
+  key_result_id?: string | null;
+  /** 지난 뒤 모일 시즌 폴더 */
+  season_id?: string | null;
+};
+
+export type Season = {
+  id: string; name: string; starts_on: string | null; ends_on: string | null;
+  keywords: string[]; sort_order: number;
 };
 export type DailyReview = { id: string; date: string; note: string | null; checked_count: number };
 export type JobPosting = {

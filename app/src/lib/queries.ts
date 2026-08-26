@@ -1,6 +1,7 @@
 import { db } from './db';
 import type { Area, Objective, Milestone, KeyResult, Initiative, DailyTask, Habit, HabitLog, CalendarEvent, SessionLog } from './types';
 import { kstToday, kstMonday } from './types';
+import { isDeadlineEvent, ddayOf, DEADLINE_LEAD_DAYS } from './deadline';
 
 const DEFAULT_AREAS: Array<Pick<Area, 'name' | 'color' | 'icon'> & { sort_order: number }> = [
   { name: '운동', color: '#10b981', icon: '💪', sort_order: 1 },
@@ -78,6 +79,8 @@ export type TodayData = {
   krWeekDone: Record<string, number>;
   /** 지표별 오늘 남긴 기록 — 되돌리기와 "오늘 얼마나 했나" 표시에 쓴다. */
   krTodayLogs: Record<string, SessionLog[]>;
+  /** 곧 닥친 마감 — D-3부터 오늘 할일 '마감·제출'에 올라온다. 이미 끝낸 건 빠진다. */
+  dueEvents: CalendarEvent[];
 };
 
 /** 이만큼 반복해 끝냈으면 "이건 한 번짜리가 아니라 루틴이다"라고 볼 만하다. */
@@ -89,7 +92,7 @@ export async function getToday(): Promise<TodayData> {
   const dayStartUtc = new Date(`${date}T00:00:00+09:00`).toISOString();
   const dayEndUtc = new Date(`${date}T23:59:59+09:00`).toISOString();
   const sinceUtc = new Date(Date.now() - ROUTINE_HINT_DAYS * 86400_000).toISOString();
-  const [areas, tasks, habitsData, events, inis, checks, krQ, krLogQ] = await Promise.all([
+  const [areas, tasks, habitsData, events, inis, checks, krQ, krLogQ, dueQ] = await Promise.all([
     getAreas(),
     db().from('daily_tasks').select('*').eq('date', date).order('done').order('created_at'),
     getHabitsWithLogs(28),
@@ -100,6 +103,11 @@ export async function getToday(): Promise<TodayData> {
     db().from('key_results').select('*, objectives!inner(status)').eq('show_daily', true).eq('objectives.status', 'active'),
     // 이번 주 기록 — 주간형 실적과 오늘 기록을 여기서 가른다
     db().from('session_logs').select('*').not('key_result_id', 'is', null).gte('logged_at', `${kstMonday()}T00:00:00+09:00`),
+    // 곧 닥친 마감 (오늘 ~ D+lead). 지난 것은 '과거 마감'이 따로 다룬다.
+    db().from('calendar_events').select('*')
+      .gte('starts_at', dayStartUtc)
+      .lte('starts_at', new Date(new Date(dayStartUtc).getTime() + (DEADLINE_LEAD_DAYS + 1) * 86400_000).toISOString())
+      .order('starts_at'),
   ]);
   if (tasks.error) throw new Error(`할일 조회 실패: ${tasks.error.message}`);
   if (events.error) throw new Error(`일정 조회 실패: ${events.error.message}`);
@@ -137,8 +145,14 @@ export async function getToday(): Promise<TodayData> {
       .sort((a, b) => a.logged_at.localeCompare(b.logged_at));
   }
 
+  if (dueQ.error) throw new Error(`마감 조회 실패: ${dueQ.error.message}`);
+  // 마감으로 판정됐고, 아직 안 끝냈고, D-3 안에 든 것만 올린다.
+  const dueEvents = ((dueQ.data ?? []) as CalendarEvent[])
+    .filter((e) => !e.done_at && isDeadlineEvent(e) && ddayOf(e.starts_at, date) <= DEADLINE_LEAD_DAYS);
+
   return {
     date,
+    dueEvents,
     dailyKrs,
     krWeekDone,
     krTodayLogs,

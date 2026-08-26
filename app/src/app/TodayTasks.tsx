@@ -1,7 +1,9 @@
 import { toggleTask, toggleHabitLog, createTask, promoteTaskToRoutine } from '@/lib/actions';
 import { TaskEditor, HabitEditor } from './RowEditors';
 import { weekCountOf, streakOf } from '@/lib/queries';
-import type { Area, DailyTask, Habit, HabitLog, Initiative, KeyResult, SessionLog } from '@/lib/types';
+import type { Area, CalendarEvent, DailyTask, Habit, HabitLog, Initiative, KeyResult, SessionLog } from '@/lib/types';
+import { toggleEventDone } from '@/lib/actions';
+import { ddayOf } from '@/lib/deadline';
 import KrRow from './KrRow';
 
 function ddayLabel(due: string, today: string): { text: string; urgent: boolean } {
@@ -84,9 +86,10 @@ type Props = {
   dailyKrs: KeyResult[];
   krWeekDone: Record<string, number>;
   krTodayLogs: Record<string, SessionLog[]>;
+  dueEvents: CalendarEvent[];
 };
 
-export default function TodayTasks({ date, tasks, habits, habitLogs, weekInitiatives, areas, repeated, dailyKrs, krWeekDone, krTodayLogs }: Props) {
+export default function TodayTasks({ date, tasks, habits, habitLogs, weekInitiatives, areas, repeated, dailyKrs, krWeekDone, krTodayLogs, dueEvents }: Props) {
   const areaOf = (id: string | null) => areas.find((a) => a.id === id);
   const habitLogOf = (id: string) => habitLogs.find((l) => l.habit_id === id && l.date === date && l.done);
 
@@ -101,7 +104,7 @@ export default function TodayTasks({ date, tasks, habits, habitLogs, weekInitiat
 
   const krDoneCount = dailyKrs.filter((k) => (krTodayLogs[k.id] ?? []).length > 0).length;
   const doneCount = tasks.filter((x) => x.done).length + habits.filter((h) => habitLogOf(h.id)).length + krDoneCount;
-  const totalCount = tasks.length + habits.length + dailyKrs.length;
+  const totalCount = tasks.length + habits.length + dailyKrs.length + dueEvents.length;
 
   return (
     <section className="tile rise min-w-0 lg:col-span-4">
@@ -112,8 +115,29 @@ export default function TodayTasks({ date, tasks, habits, habitLogs, weekInitiat
 
       {totalCount === 0 && <p className="t-sub py-4 text-center">＋ 버튼으로 오늘을 설계해보세요</p>}
 
-      {deadlineTasks.length > 0 && (
+      {(deadlineTasks.length > 0 || dueEvents.length > 0) && (
         <Section label="마감·제출">
+          {dueEvents.map((e) => {
+            const d = ddayOf(e.starts_at, date);
+            return (
+              <li key={e.id} className="row">
+                <span className="row-bar" style={{ background: 'var(--urgent)' }} />
+                <form action={toggleEventDone} className="flex">
+                  <input type="hidden" name="id" value={e.id} />
+                  <input type="hidden" name="done" value="true" />
+                  <button type="submit" aria-label={`${e.title} 다 했음`} className="check"
+                    style={{ borderColor: 'var(--urgent-line)' }} />
+                </form>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-medium">{e.title}</p>
+                  <p className="t-cap">달력에서 왔어요</p>
+                </div>
+                <span className="mono shrink-0 text-[11px]" style={{ color: 'var(--urgent)' }}>
+                  {d === 0 ? 'D-DAY' : `D-${d}`}
+                </span>
+              </li>
+            );
+          })}
           {deadlineTasks.map((task) => <TaskRow key={task.id} task={task} area={areaOf(task.area_id)} areas={areas} today={date} showDue repeatedDays={repeated[task.title]} />)}
         </Section>
       )}
