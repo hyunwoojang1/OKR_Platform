@@ -5,3 +5,6 @@ node_modules/
 .vercel/
 
 supabase/.temp/
+
+# 화면 확인용 캡처 (커밋 대상 아님)
+screenshots/

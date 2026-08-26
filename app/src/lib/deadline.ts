@@ -98,6 +98,22 @@ export function pickSeason(
   return byDate[0]?.id ?? null;
 }
 
+/**
+ * 화면에 쓸 일정 제목.
+ *
+ * 구글 달력에는 "🔴 마감 15:00 — 우리자산운용 ETF솔루션 신입" 처럼 적혀 있다.
+ * 그 앞머리는 달력에서 눈에 띄라고 붙인 것이지 읽을 내용이 아니다. 앱에서는 이미
+ * '마감·제출' 칸에 들어가 있으니 두 번 말할 필요가 없다 — 회사 이름만 남긴다.
+ * 시각은 버리지 않고 따로 돌려준다(caption 에 쓴다).
+ */
+export function cleanEventTitle(raw: string): { title: string; time: string | null } {
+  const source = (raw ?? '').trim();
+  let t = source.replace(/^[\p{Extended_Pictographic}️‍]+\s*/u, '');
+  const time = /^마감\s*(\d{1,2}:\d{2})/.exec(t)?.[1] ?? null;
+  t = t.replace(/^마감\s*(\d{1,2}:\d{2})?\s*[—–-]\s*/, '');
+  return { title: t.trim() || source, time };
+}
+
 /** 오늘 기준 D-day. 음수면 지난 것. */
 export function ddayOf(startsAt: string, today: string): number {
   const day = new Date(new Date(startsAt).getTime() + 9 * 3600_000).toISOString().slice(0, 10);

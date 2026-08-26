@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { db } from './db';
 import { kstToday, kstQuarter, kstMonday } from './types';
-import { CERT_NAMES } from './deadline';
+import { CERT_NAMES, cleanEventTitle, isDeadlineEvent } from './deadline';
 
 // 모든 액션 공통: 입력을 서버에서 검증하고(빈 문자열 거부), 실패는 명시적으로 던진다.
 function must(v: FormDataEntryValue | null, name: string): string {
@@ -453,9 +453,12 @@ export async function toggleHabitLog(form: FormData) {
 // ── 캘린더 (v1: 앱 일정. Google 동기화는 크리덴셜 수령 후 sync_status로 밀어냄) ──
 export async function createEvent(form: FormData) {
   const startsAt = must(form.get('starts_at'), '시작');
+  const rawTitle = must(form.get('title'), '제목');
   await run('일정 생성', () =>
     db().from('calendar_events').insert({
-      title: must(form.get('title'), '제목'),
+      // 구글에서 들어오는 것과 같은 규칙: 원본으로 마감 여부를 판정하고, 제목은 앞머리를 뗀다.
+      title: cleanEventTitle(rawTitle).title,
+      is_deadline: isDeadlineEvent({ title: rawTitle, is_deadline: null }),
       starts_at: new Date(startsAt).toISOString(),
       ends_at: (form.get('ends_at') as string)?.trim() ? new Date(form.get('ends_at') as string).toISOString() : null,
       all_day: form.get('all_day') === 'on',

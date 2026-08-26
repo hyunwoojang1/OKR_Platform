@@ -4,6 +4,7 @@
 // 서버 전용 — service_role db()와 refresh_token을 다루므로 클라이언트 컴포넌트에서 import 금지.
 import { config } from './config';
 import { db } from './db';
+import { cleanEventTitle, isDeadlineEvent } from './deadline';
 import type { CalendarEvent } from './types';
 import { kstToday } from './types';
 
@@ -87,7 +88,21 @@ function fromGoogle(ev: GoogleEvent) {
   const endsAt = allDay
     ? (ev.end?.date ? new Date(`${ev.end.date}T00:00:00+09:00`).toISOString() : null)
     : (ev.end?.dateTime ?? null);
-  return { title: ev.summary?.trim() || '(제목 없음)', starts_at: startsAt, ends_at: endsAt, all_day: allDay };
+  // 제목은 들어올 때 한 번 정리한다 — "🔴 마감 15:00 — 우리자산운용…" 의 앞머리는
+  // 구글 달력에서 눈에 띄라고 붙인 표시지 읽을 내용이 아니다. 화면마다 따로 떼면
+  // 반드시 어딘가 빠뜨린다(실제로 12곳에서 그리고 있었다). 시각은 starts_at 에 이미 있다.
+  const raw = ev.summary ?? '';
+  const clean = cleanEventTitle(raw).title;
+  return {
+    title: clean || '(제목 없음)',
+    starts_at: startsAt,
+    ends_at: endsAt,
+    all_day: allDay,
+    // 마감인지도 여기서 정한다. 판별 규칙은 '마감'·'🔴' 같은 앞머리를 보고 판단하는데,
+    // 그 앞머리는 방금 제목에서 뗐다. 원본이 살아 있는 건 이 순간뿐이라 여기서 판정해 저장한다.
+    // (화면에서 다시 계산하려 들면 지워진 단서를 찾게 되고, 아무것도 마감으로 안 잡힌다)
+    deadlineGuess: isDeadlineEvent({ title: raw, is_deadline: null }),
+  };
 }
 
 async function pushPending(token: string): Promise<number> {
@@ -142,15 +157,29 @@ async function pullWindow(token: string): Promise<{ pulled: number; deleted: num
   const sourceByGid = new Map(cachedRows.map((c) => [c.google_event_id!, c.source]));
 
   // 앱에서 밀어올린 일정(google_event_id 보유)도 Google 쪽 수정을 이 upsert로 되받는다
-  const rows = googleEvents.map((ev) => ({
-    google_event_id: ev.id,
-    ...fromGoogle(ev),
-    source: sourceByGid.get(ev.id) ?? 'google',
-    sync_status: 'synced',
-  }));
-  if (rows.length > 0) {
-    const { error } = await db().from('calendar_events').upsert(rows, { onConflict: 'google_event_id' });
+  const parsed = googleEvents.map((ev) => {
+    const { deadlineGuess, ...cols } = fromGoogle(ev);
+    return {
+      gid: ev.id,
+      deadlineGuess,
+      row: { google_event_id: ev.id, ...cols, source: sourceByGid.get(ev.id) ?? 'google', sync_status: 'synced' },
+    };
+  });
+  if (parsed.length > 0) {
+    const { error } = await db()
+      .from('calendar_events').upsert(parsed.map((p) => p.row), { onConflict: 'google_event_id' });
     if (error) throw new Error(`일정 캐시 갱신 실패: ${error.message}`);
+
+    // 마감 판정은 '아직 아무도 안 정한 것'만 채운다.
+    // 사용자가 ⚙ 로 직접 뒤집어 둔 값을 동기화가 매번 되돌리면 그 스위치가 무용지물이 된다.
+    for (const want of [true, false]) {
+      const ids = parsed.filter((p) => p.deadlineGuess === want).map((p) => p.gid);
+      if (ids.length === 0) continue;
+      const { error: gErr } = await db()
+        .from('calendar_events').update({ is_deadline: want })
+        .in('google_event_id', ids).is('is_deadline', null);
+      if (gErr) throw new Error(`마감 판정 저장 실패: ${gErr.message}`);
+    }
   }
 
   // 창(window) 안에 있는데 Google에서 사라진 일정 = 삭제된 것 → 캐시에서도 제거
@@ -165,7 +194,7 @@ async function pullWindow(token: string): Promise<{ pulled: number; deleted: num
     const { error } = await db().from('calendar_events').delete().in('id', stale.map((c) => c.id));
     if (error) throw new Error(`삭제 반영 실패: ${error.message}`);
   }
-  return { pulled: rows.length, deleted: stale.length };
+  return { pulled: parsed.length, deleted: stale.length };
 }
 
 // 앱에서 지운 일정을 Google에도 반영 (없어진 일정 404는 성공으로 간주)

@@ -6,6 +6,8 @@ import type { CalendarEvent, JobPosting, SessionLog } from '@/lib/types';
 import { kstToday, krPct, fmtKrValue, krUnit } from '@/lib/types';
 import AddTaskSheet from './AddTaskSheet';
 import TodayTasks from './TodayTasks';
+import DeadlineBox from './DeadlineBox';
+import RoutineBox from './RoutineBox';
 import DeleteLogButton from './DeleteLogButton';
 import WeeklyMetricCard, { isWeighInDay, pickWeeklyMetrics } from './WeeklyMetricCard';
 
@@ -106,6 +108,13 @@ export default async function TodayPage() {
     return acc;
   }, []);
 
+  // ── 할일을 두 박스로 가른다 ──
+  // 마감·제출에는 '곧' 인 것만 둔다. D-54 짜리가 마감 칸에 서 있으면
+  // 정작 내일 마감인 것이 안 보인다.
+  const DEADLINE_WINDOW_DAYS = 7;
+  const dueTasks = t.tasks.filter((x) => x.due_date && ddayOf(x.due_date) <= DEADLINE_WINDOW_DAYS);
+  const soonTasks = t.tasks.filter((x) => !dueTasks.includes(x));
+
   // ── 타임라인 재료 ──
   const allDay = t.events.filter((e) => e.all_day);
   const timed = t.events.filter((e) => !e.all_day);
@@ -174,20 +183,41 @@ export default async function TodayPage() {
 
       {/* 1행: 할일 · 오늘 타임라인 · D-day+어제 — 균등 분할 (QA: 카드 폭 통일, 좁은 창은 768px부터 2열) */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
-        {/* 좌: 할일 — 마감·제출 / 루틴 / 목표 / 그 외 4구역. 체크해도 제자리에 남는다. */}
-        <TodayTasks
-          date={t.date}
-          tasks={t.tasks}
-          habits={t.habits}
-          habitLogs={t.habitLogs}
-          weekInitiatives={t.weekInitiatives}
-          areas={t.areas}
-          repeated={t.repeated}
-          dailyKrs={t.dailyKrs}
-          krWeekDone={t.krWeekDone}
-          krTodayLogs={t.krTodayLogs}
-          dueEvents={t.dueEvents}
-        />
+        {/*
+          좌: 박스 셋으로 나눈다. 한 상자에 섞여 있으면 "오늘 뭘 하면 되지"가 안 읽힌다.
+            오늘 할일 — 오늘 한 번 하고 끝나는 것 (+ 오늘 해낸 것)
+            마감·제출 — 남이 정한 기한이 박힌 것
+            루틴      — 여러 번에 걸쳐 채워가는 것
+          체크의 뜻도 박스마다 다르다: 위는 내가 눌러 끝낸 것, 아래는 목표를 다 채운 것.
+        */}
+        <div className="min-w-0 space-y-4 md:col-span-2 lg:col-span-4">
+          <TodayTasks
+            date={t.date}
+            tasks={soonTasks}
+            habits={t.habits}
+            habitLogs={t.habitLogs}
+            weekInitiatives={t.weekInitiatives}
+            areas={t.areas}
+            repeated={t.repeated}
+            dailyKrs={t.dailyKrs}
+            krTodayLogs={t.krTodayLogs}
+          />
+          <DeadlineBox
+            date={t.date}
+            events={t.dueEvents}
+            tasks={dueTasks}
+            areas={t.areas}
+          />
+          <RoutineBox
+            date={t.date}
+            habits={t.habits}
+            habitLogs={t.habitLogs}
+            areas={t.areas}
+            dailyKrs={t.dailyKrs}
+            krWeekDone={t.krWeekDone}
+            krTodayLogs={t.krTodayLogs}
+          />
+        </div>
 
         {/* 중: 오늘 타임라인 (위젯 8) */}
         <section className="tile rise min-w-0 lg:col-span-4">
