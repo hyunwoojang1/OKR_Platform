@@ -52,7 +52,11 @@ export async function POST(req: NextRequest) {
   }
   const km = Math.round(Number(body.km) * 100) / 100;
   const minutes = Number(body.minutes);
-  if (!Number.isFinite(km) || km <= 0 || km > MAX_KM) {
+  // 안 뛴 날에도 자동화는 돈다 — 빈 값/0은 에러가 아니라 "할 일 없음"으로 조용히 넘긴다.
+  if (!Number.isFinite(km) || km <= 0) {
+    return NextResponse.json({ ok: true, skipped: '오늘 러닝 기록 없음' });
+  }
+  if (km > MAX_KM) {
     return NextResponse.json({ error: `km 값이 이상해요: ${String(body.km)}` }, { status: 400 });
   }
   const min = Number.isFinite(minutes) && minutes > 0 && minutes <= MAX_MIN ? Math.round(minutes) : null;
