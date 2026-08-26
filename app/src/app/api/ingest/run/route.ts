@@ -100,8 +100,24 @@ export async function POST(req: NextRequest) {
       return rk === km && rm === (min ?? null);
     });
     if (sameRun) {
+      // 중복도 알려준다 — "쐈는데 반응이 없다"가 제일 불안하다.
+      // tag를 고정해 여러 번 눌러도 알림이 쌓이지 않고 하나가 갱신된다.
+      const when = new Date(new Date(sameRun.logged_at).getTime() + 9 * 3600_000);
+      const hhmm = `${String(when.getUTCMonth() + 1)}/${when.getUTCDate()} ${String(when.getUTCHours()).padStart(2, '0')}:${String(when.getUTCMinutes()).padStart(2, '0')}`;
+      let dupPush: unknown = null;
+      try {
+        const { sendPushToAll } = await import('@/lib/push');
+        dupPush = await sendPushToAll({
+          title: `이미 기록된 러닝이에요 ✅`,
+          body: `${km}km — ${hhmm}에 넣어둔 것과 같아서 중복으로 더하지 않았어요.`,
+          url: '/',
+          tag: 'run-dup',
+        });
+      } catch (e) {
+        console.error('중복 알림 실패:', e);
+      }
       return NextResponse.json({
-        ok: true, km, addedKm: 0, duplicate: true,
+        ok: true, km, addedKm: 0, duplicate: true, push: dupPush,
         note: `이미 기록된 러닝과 완전히 동일 (${sameRun.logged_at.slice(0, 16)}) — 건너뜀`,
       });
     }
