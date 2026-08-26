@@ -3,7 +3,8 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { createEvent, deleteEvent, sendJobCommand, syncCalendarNow, togglePinEvent } from '@/lib/actions';
+import { createEvent, sendJobCommand, syncCalendarNow, togglePinEvent } from '@/lib/actions';
+import { CleanupMode, DeleteEventButton } from './EventCleanup';
 import type { CalendarEvent, JobPosting } from '@/lib/types';
 
 export type GoalLite = {
@@ -208,6 +209,7 @@ export default function CalendarView({
                   <button type="submit" className="underline underline-offset-2">동기화</button>
                 </form>
               )}
+              <CleanupMode events={events} />
             </div>
           </header>
 
@@ -380,12 +382,7 @@ export default function CalendarView({
                         </button>
                       </form>
                       {e.source === 'google' && <span className="mono text-[10px]" style={{ color: 'var(--ink-4)' }}>G</span>}
-                      {e.source === 'app' && (
-                        <form action={deleteEvent}>
-                          <input type="hidden" name="id" value={e.id} />
-                          <button type="submit" aria-label="삭제" className="text-xs" style={{ color: 'var(--ink-4)' }}>✕</button>
-                        </form>
-                      )}
+                      <DeleteEventButton event={e} />
                     </div>
                   </div>
                 ))}

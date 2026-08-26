@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: '목표 허브',
-  description: '캘린더 · OKR · 습관 · 아침 브리핑을 한 곳에서',
+  description: '캘린더 · OKR · 루틴 · 아침 브리핑을 한 곳에서',
   manifest: '/manifest.webmanifest',
   appleWebApp: { capable: true, statusBarStyle: 'default', title: '목표 허브' },
 };

@@ -7,7 +7,7 @@ import { kstToday } from '@/lib/types';
 export const maxDuration = 30;
 
 // 러닝 자동 기록: 아이폰 단축어(나이키→애플건강→여기)가 POST 한다.
-// 하는 일: ① 세션 로그 한 줄 ② 러닝 지표(KR) 자동 누적 ③ 오늘 할일 '러닝' 자동 체크 ④ 러닝 습관 체크.
+// 하는 일: ① 세션 로그 한 줄 ② 러닝 지표(KR) 자동 누적 ③ 오늘 할일 '러닝' 자동 체크 ④ 러닝 루틴 체크.
 // 인증은 크론과 같은 시크릿(?secret= 또는 Bearer) — 개인 도구라 별도 키를 늘리지 않는다.
 const RUN_WORDS = /러닝|달리기|조깅|run|뛰/i;
 const MAX_KM = 200;
@@ -178,7 +178,7 @@ export async function POST(req: NextRequest) {
       if (!error) taskDone = runTask.title;
     }
 
-    // ── ④ 러닝 습관 자동 체크 ──
+    // ── ④ 러닝 루틴 자동 체크 ──
     let habitChecked: string | null = null;
     const { data: habits } = await db().from('habits').select('id,title').eq('archived', false);
     const runHabit = (habits ?? []).find((h) => RUN_WORDS.test(h.title));

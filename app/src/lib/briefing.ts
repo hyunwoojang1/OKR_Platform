@@ -112,7 +112,7 @@ export async function buildMorningBriefing(): Promise<MorningBriefing> {
   if (tasks.length === 0 && (iniQ.data as Initiative[]).length > 0) {
     lines.push('오늘 할일이 비었어요 — 이번 주 이니셔티브에서 골라보세요');
   }
-  if (habitsDue.length) lines.push(`🔥 습관 ${habitsDue.map((h) => h.title).join(', ')}`);
+  if (habitsDue.length) lines.push(`🔥 루틴 ${habitsDue.map((h) => h.title).join(', ')}`);
   for (const l of lagging) lines.push(`⚠️ "${l.kr.title}" 진척 ${krPct(l.kr)}% — 분기 페이스보다 뒤처짐`);
 
   return {
@@ -150,7 +150,7 @@ export async function buildEveningStatus(): Promise<EveningStatus> {
   const uncheckedHabits = (habitsQ.data ?? []).filter((h: { id: string }) => !logged.has(h.id)).length;
   const parts: string[] = [];
   if (openTasks) parts.push(`할일 ${openTasks}개`);
-  if (uncheckedHabits) parts.push(`습관 ${uncheckedHabits}개`);
+  if (uncheckedHabits) parts.push(`루틴 ${uncheckedHabits}개`);
   return {
     date: today,
     openTasks,

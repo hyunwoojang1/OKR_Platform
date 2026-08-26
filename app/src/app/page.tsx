@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { getToday, getOkrTree, streakOf } from '@/lib/queries';
-import { toggleTask, toggleHabitLog, createTask, togglePinEvent, togglePinObjective, sendJobCommand } from '@/lib/actions';
+import { togglePinEvent, togglePinObjective, sendJobCommand } from '@/lib/actions';
 import type { CalendarEvent, JobPosting, SessionLog } from '@/lib/types';
 import { kstToday, krPct } from '@/lib/types';
 import AddTaskSheet from './AddTaskSheet';
+import TodayTasks from './TodayTasks';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,7 @@ function kstNowHM(): string {
   return new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Seoul' });
 }
 
-// v4 홈 = 기존 조종석(KPI·할일·OKR 진척·습관) + 그릴 확정 위젯 3종(D-day 보드·어제의 나·오늘 타임라인)의 합본.
+// v4 홈 = 기존 조종석(KPI·할일·OKR 진척·루틴) + 그릴 확정 위젯 3종(D-day 보드·어제의 나·오늘 타임라인)의 합본.
 // 맥시멀 원칙: 빼지 말고 더하되, 전부 실데이터로 살아 있을 것.
 export default async function TodayPage() {
   const today = kstToday();
@@ -82,6 +83,14 @@ export default async function TodayPage() {
     .sort((a, b) => a.dday - b.dday)
     .slice(0, 6);
 
+  // 같은 D-day끼리 묶기 — 날짜가 겹치면 머리글을 공유한다.
+  const boardGroups = board.reduce<{ dday: number; date: string; items: typeof board }[]>((acc, b) => {
+    const last = acc[acc.length - 1];
+    if (last && last.dday === b.dday) last.items.push(b);
+    else acc.push({ dday: b.dday, date: b.date, items: [b] });
+    return acc;
+  }, []);
+
   // ── 타임라인 재료 ──
   const allDay = t.events.filter((e) => e.all_day);
   const timed = t.events.filter((e) => !e.all_day);
@@ -115,7 +124,7 @@ export default async function TodayPage() {
           <p className="kpi-delta" style={{ color: signal(taskPct) }}>{doneTasks.length}/{t.tasks.length} 할일</p>
         </div>
         <div className="kpi">
-          <p className="kpi-label">습관</p>
+          <p className="kpi-label">루틴</p>
           <p className="kpi-value">{habitsChecked}/{t.habits.length}</p>
           <p className="kpi-delta" style={{ color: maxStreak > 0 ? 'var(--gold)' : 'var(--ink-3)' }}>
             {maxStreak > 0 ? `🔥 최장 ${maxStreak}일` : '오늘 체크 전'}
@@ -147,79 +156,16 @@ export default async function TodayPage() {
 
       {/* 1행: 할일 · 오늘 타임라인 · D-day+어제 — 균등 분할 (QA: 카드 폭 통일, 좁은 창은 768px부터 2열) */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
-        {/* 좌: 할일 (기존) */}
-        <section className="tile rise min-w-0 lg:col-span-4">
-          <div className="mb-2 flex items-baseline justify-between">
-            <h2 className="tile-title mb-0">오늘 할일</h2>
-            <span className="t-cap">{doneTasks.length}/{t.tasks.length}</span>
-          </div>
-          {t.tasks.length === 0 && <p className="t-sub py-4 text-center">＋ 버튼으로 오늘을 설계해보세요</p>}
-          <ul>
-            {openTasks.map((task) => {
-              const area = areaOf(task.area_id);
-              return (
-                <li key={task.id} className="row">
-                  {area && <span className="row-bar" style={{ background: area.color }} />}
-                  <form action={toggleTask} className="flex">
-                    <input type="hidden" name="id" value={task.id} />
-                    <input type="hidden" name="done" value="true" />
-                    <button type="submit" aria-label="완료" className="check" style={area ? { borderColor: area.color } : undefined} />
-                  </form>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[14px] font-medium">{task.title}</p>
-                    <p className="t-cap flex gap-1.5">
-                      {area && <span style={{ color: area.color }}>{area.name}</span>}
-                      {task.carried_over > 0 && <span style={{ color: 'var(--warn)' }}>이월 {task.carried_over}회</span>}
-                      {task.due_date && <span>~{Number(task.due_date.slice(5, 7))}/{Number(task.due_date.slice(8, 10))}</span>}
-                    </p>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-          {doneTasks.length > 0 && (
-            <details className="mt-1">
-              <summary className="t-cap cursor-pointer px-2 py-1">완료 {doneTasks.length}</summary>
-              <ul>
-                {doneTasks.map((task) => (
-                  <li key={task.id} className="row opacity-40">
-                    <form action={toggleTask} className="flex">
-                      <input type="hidden" name="id" value={task.id} />
-                      <input type="hidden" name="done" value="false" />
-                      <button type="submit" aria-label="되돌리기" className="check on" style={{ background: 'var(--ink-4)', borderColor: 'var(--ink-4)' }}>✓</button>
-                    </form>
-                    <span className="truncate text-[14px] line-through">{task.title}</span>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-          {/* 이번 주 이니셔티브 → 원탭 내리기 (기존) */}
-          {t.weekInitiatives.length > 0 && (
-            <div className="mt-3 border-t pt-3" style={{ borderColor: 'var(--line)' }}>
-              <p className="sec-label mb-2">이번 주 할 일에서 가져오기</p>
-              <ul className="flex flex-wrap gap-1.5">
-                {t.weekInitiatives.map((i) => {
-                  const area = areaOf(i.area_id);
-                  return (
-                    <li key={i.id}>
-                      <form action={createTask}>
-                        <input type="hidden" name="title" value={i.title} />
-                        <input type="hidden" name="area_id" value={i.area_id ?? ''} />
-                        <input type="hidden" name="initiative_id" value={i.id} />
-                        <button type="submit" className="chip pressable" title="오늘 할일로 내리기">
-                          {area && <span className="area-dot" style={{ background: area.color }} />}
-                          {i.priority === 1 && '⚡'}{i.title}
-                          <span style={{ color: 'var(--ink-4)' }}>↴</span>
-                        </button>
-                      </form>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
-        </section>
+        {/* 좌: 할일 — 마감·제출 / 루틴 / 목표 / 그 외 4구역. 체크해도 제자리에 남는다. */}
+        <TodayTasks
+          date={t.date}
+          tasks={t.tasks}
+          habits={t.habits}
+          habitLogs={t.habitLogs}
+          weekInitiatives={t.weekInitiatives}
+          areas={t.areas}
+          repeated={t.repeated}
+        />
 
         {/* 중: 오늘 타임라인 (위젯 8) */}
         <section className="tile rise min-w-0 lg:col-span-4">
@@ -292,39 +238,51 @@ export default async function TodayPage() {
             {board.length === 0 ? (
               <p className="t-cap leading-relaxed">달력에서 일정에 📌을 찍거나 기한 있는 목표를 만들면 올라와요.</p>
             ) : (
-              <ul className="space-y-2.5">
-                {board.map((b) => (
-                  <li key={b.key} className="flex items-center gap-2.5">
-                    <span className="mono w-11 shrink-0 text-[12.5px] font-medium" style={{ color: b.dday <= 7 ? 'var(--urgent)' : 'var(--ink)' }}>
-                      {b.dday === 0 ? 'D-DAY' : `D-${b.dday}`}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      {b.href ? (
-                        <Link href={b.href} className="block truncate text-[13px] leading-snug hover:underline">{b.title}</Link>
-                      ) : (
-                        <span className="block truncate text-[13px] leading-snug">{b.title}</span>
-                      )}
-                      <span className="mono text-[10px]" style={{ color: 'var(--ink-4)' }}>
-                        {b.date.slice(5).replace('-', '/')}{b.kind === 'goal' ? ' · 목표' : ''}
+              <div className="space-y-3">
+                {boardGroups.map((g) => (
+                  <div key={g.dday}>
+                    {/* 같은 날짜는 머리글 하나로 묶는다 — D-40이 항목마다 반복되던 걸 없앰 */}
+                    <div className="mb-1 flex items-baseline gap-2">
+                      <span
+                        className="mono text-[12.5px] font-medium"
+                        style={{ color: g.dday <= 7 ? 'var(--urgent)' : 'var(--ink)' }}
+                      >
+                        {g.dday === 0 ? 'D-DAY' : `D-${g.dday}`}
                       </span>
+                      <span className="mono text-[10px]" style={{ color: 'var(--ink-4)' }}>
+                        {g.date.slice(5).replace('-', '/')}
+                      </span>
+                      <span className="h-px flex-1" style={{ background: 'var(--line)' }} />
                     </div>
-                    {b.eventId && (
-                      <form action={togglePinEvent}>
-                        <input type="hidden" name="id" value={b.eventId} />
-                        <input type="hidden" name="pinned" value="false" />
-                        <button type="submit" aria-label="핀 해제" className="text-xs opacity-60 hover:opacity-100">📌</button>
-                      </form>
-                    )}
-                    {b.objectiveId && (
-                      <form action={togglePinObjective}>
-                        <input type="hidden" name="id" value={b.objectiveId} />
-                        <input type="hidden" name="pinned" value="false" />
-                        <button type="submit" aria-label="핀 해제" className="text-xs opacity-60 hover:opacity-100">📌</button>
-                      </form>
-                    )}
-                  </li>
+                    <ul className="space-y-1">
+                      {g.items.map((b) => (
+                        <li key={b.key} className="flex items-baseline gap-2">
+                          {b.href ? (
+                            <Link href={b.href} className="min-w-0 flex-1 truncate text-[13px] leading-snug hover:underline">{b.title}</Link>
+                          ) : (
+                            <span className="min-w-0 flex-1 truncate text-[13px] leading-snug">{b.title}</span>
+                          )}
+                          {b.kind === 'goal' && <span className="mono shrink-0 text-[10px]" style={{ color: 'var(--ink-4)' }}>목표</span>}
+                          {b.eventId && (
+                            <form action={togglePinEvent} className="shrink-0">
+                              <input type="hidden" name="id" value={b.eventId} />
+                              <input type="hidden" name="pinned" value="false" />
+                              <button type="submit" aria-label="핀 해제" className="text-xs opacity-60 hover:opacity-100">📌</button>
+                            </form>
+                          )}
+                          {b.objectiveId && (
+                            <form action={togglePinObjective} className="shrink-0">
+                              <input type="hidden" name="id" value={b.objectiveId} />
+                              <input type="hidden" name="pinned" value="false" />
+                              <button type="submit" aria-label="핀 해제" className="text-xs opacity-60 hover:opacity-100">📌</button>
+                            </form>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ))}
-              </ul>
+              </div>
             )}
           </section>
 
@@ -352,7 +310,7 @@ export default async function TodayPage() {
         </div>
       </div>
 
-      {/* 2행: OKR 진척(기존) · 습관(기존) */}
+      {/* 2행: OKR 진척 */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
         <section className="tile rise min-w-0 lg:col-span-8">
           <div className="mb-2 flex items-baseline justify-between">
@@ -398,33 +356,7 @@ export default async function TodayPage() {
           </ul>
         </section>
 
-        <section className="tile rise min-w-0 lg:col-span-4">
-          <h2 className="tile-title">습관</h2>
-          <ul className="space-y-2">
-            {t.habits.map((h) => {
-              const area = areaOf(h.area_id);
-              const color = area?.color ?? 'var(--ink-4)';
-              const done = habitDone(h.id);
-              const streak = streakOf(h.id, t.habitLogs);
-              return (
-                <li key={h.id} className="flex items-center gap-2.5">
-                  <form action={toggleHabitLog} className="flex">
-                    <input type="hidden" name="habit_id" value={h.id} />
-                    <input type="hidden" name="date" value={t.date} />
-                    <input type="hidden" name="done" value={String(!done)} />
-                    <button type="submit" aria-label={h.title} className={`check ${done ? 'on' : ''}`}
-                      style={done ? { background: color, borderColor: color } : { borderColor: color }}>
-                      {done ? '✓' : ''}
-                    </button>
-                  </form>
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{h.title}</span>
-                  {streak > 0 && <span className="badge" style={{ background: 'var(--gold-soft)', color: 'var(--gold)' }}>🔥{streak}</span>}
-                </li>
-              );
-            })}
-            {t.habits.length === 0 && <li className="t-cap opacity-60">등록된 습관 없음</li>}
-          </ul>
-        </section>
+        {/* 루틴은 '오늘 할일' 안 ▸루틴 구역에서 주간 횟수와 함께 체크한다. */}
       </div>
 
       <AddTaskSheet areas={t.areas} />

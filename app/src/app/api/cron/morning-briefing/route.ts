@@ -10,7 +10,7 @@ export const maxDuration = 60;
 export async function GET(req: NextRequest) {
   if (!cronAuthorized(req)) return new NextResponse('unauthorized', { status: 401 });
   try {
-    // KR 자동채움(습관 집계·api 커넥터) → 브리핑이 최신 진척률을 보게 함. 실패해도 브리핑은 계속.
+    // KR 자동채움(루틴 집계·api 커넥터) → 브리핑이 최신 진척률을 보게 함. 실패해도 브리핑은 계속.
     const { syncAutoKRs } = await import('@/lib/kr-sync');
     const krSync = await syncAutoKRs().catch((e) => {
       console.error('KR 자동채움 실패:', e);
