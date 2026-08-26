@@ -79,9 +79,13 @@ export async function submitForm(pathname, fields) {
   return { status: r.status, text };
 }
 
+/** 화면에서 폼을 찾아 필드를 그대로 돌려준다(아직 안 누른다). */
+export async function grabForm(pathname, anchor, extra = {}, label = '') {
+  const html = await getHtml(pathname);
+  return { ...findForm(html, anchor, label || pathname), ...extra };
+}
+
 /** 화면에서 폼을 찾아 그대로 누른다. */
 export async function press(pathname, anchor, extra = {}, label = '') {
-  const html = await getHtml(pathname);
-  const form = findForm(html, anchor, label || pathname);
-  return submitForm(pathname, { ...form, ...extra });
+  return submitForm(pathname, await grabForm(pathname, anchor, extra, label));
 }

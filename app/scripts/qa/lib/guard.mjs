@@ -82,68 +82,76 @@ async function sweepTagged() {
   return left;
 }
 
-/**
- * 하네스 본체를 감싸는 껍데기.
- * fn 은 { base, created } 를 받는다. created 에 push 한 { table, id } 는 끝나고 지워진다.
- */
-export async function withHarness(fn, { dry = false } = {}) {
+/** 하네스가 만든 것 목록. 여기 push 한 { table, id } 는 끝날 때 만든 역순으로 지워진다. */
+export const created = [];
+
+let baseline = null;
+let onSignal = null;
+
+async function cleanup() {
+  // ④ 만든 역순으로 지운다 — 참조가 걸려 있어도 걸리지 않게.
+  for (let i = created.length - 1; i >= 0; i -= 1) {
+    const { table, id } = created[i];
+    try { await db.from(table).delete().eq('id', id); } catch { /* 아래 훑기가 잡는다 */ }
+  }
+  created.length = 0;
+  const strays = await sweepTagged();
+  if (strays.length) {
+    console.warn(`⚠ id 로 못 지운 표식 행 ${strays.length}건을 훑어서 지웠습니다: `
+      + strays.map((s) => `${s.table}/${String(s.id).slice(0, 8)}`).join(', '));
+  }
+}
+
+/** ①②③ — 여기를 통과해야 비로소 쓴다. 최초 스냅샷을 돌려준다. */
+export async function beginHarness({ quiet = false } = {}) {
   assertLocal();
   await assertServerUp();
   acquireLock();
-
-  const created = [];
-  let before = null;
-  let exitCode = 0;
-
-  const cleanup = async () => {
-    // ④ 만든 순서의 역순으로 지운다 — 참조가 걸려 있어도 걸리지 않게.
-    for (let i = created.length - 1; i >= 0; i -= 1) {
-      const { table, id } = created[i];
-      try { await db.from(table).delete().eq('id', id); } catch { /* 아래 훑기가 잡는다 */ }
-    }
-    const strays = await sweepTagged();
-    if (strays.length) {
-      console.warn(`⚠ id 로 못 지운 표식 행 ${strays.length}건을 훑어서 지웠습니다:`,
-        strays.map((s) => `${s.table}/${String(s.id).slice(0, 8)}`).join(', '));
-    }
-  };
-
-  const onSignal = () => { void cleanup().finally(() => { releaseLock(); process.exit(130); }); };
+  onSignal = () => { void cleanup().finally(() => { releaseLock(); process.exit(130); }); };
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
+  // ③ 스냅샷을 못 뜨면 여기서 끝. 아직 아무것도 안 만들었다.
+  baseline = await snapshot();
+  if (!quiet) console.log(`스냅샷 ${Object.keys(baseline).length}개 테이블 / ${rowCount(baseline)}행`);
+  return baseline;
+}
 
+/** ④⑤⑥ — 청소하고 최초와 대조한다. 차이가 남으면 던진다. */
+export async function endHarness() {
+  await cleanup();
+  releaseLock();
+  if (onSignal) {
+    process.off('SIGINT', onSignal);
+    process.off('SIGTERM', onSignal);
+    onSignal = null;
+  }
+  if (!baseline) return;
+  const after = await snapshot();
+  const left = diff(baseline, after);
+  baseline = null;
+  if (left.length) {
+    const file = path.join(env.appDir, `.qa-leak-${Date.now()}.json`);
+    fs.writeFileSync(file, JSON.stringify(left, null, 2));
+    throw new Error(`복구가 완전하지 않습니다 — ${left.length}건이 남았습니다:\n${fmtDiff(left)}\n  자세한 내용: ${file}`);
+  }
+  console.log('복구 확인 — 최초 스냅샷과 차이 0건.');
+}
+
+/** run.mjs 용 껍데기. */
+export async function withHarness(fn, { dry = false } = {}) {
+  let exitCode = 0;
   try {
-    // ③ 스냅샷을 못 뜨면 여기서 끝. 아직 아무것도 안 만들었다.
-    before = await snapshot();
-    console.log(`스냅샷 ${Object.keys(before).length}개 테이블 / ${rowCount(before)}행`);
+    await beginHarness();
     if (dry) {
       console.log('--dry — 아무것도 쓰지 않고 안전장치만 확인했습니다.');
-      return 0;
+    } else {
+      await fn({ created });
     }
-    await fn({ created, before });
   } catch (e) {
     console.error('\n✖ 하네스 실행 중 오류:', e?.message ?? e);
     exitCode = 1;
   } finally {
-    await cleanup();
-    // ⑥ 최초와 대조. 여기가 0이 아니면 실패다 — 남은 쓰레기가 다음 실행을 오염시킨다.
-    if (before) {
-      const after = await snapshot();
-      const left = diff(before, after);
-      if (left.length) {
-        const file = path.join(env.appDir, `.qa-leak-${Date.now()}.json`);
-        fs.writeFileSync(file, JSON.stringify(left, null, 2));
-        console.error(`\n✖ 복구가 완전하지 않습니다 — ${left.length}건이 남았습니다:`);
-        console.error(fmtDiff(left));
-        console.error(`  자세한 내용: ${file}`);
-        exitCode = 1;
-      } else {
-        console.log('복구 확인 — 최초 스냅샷과 차이 0건.');
-      }
-    }
-    releaseLock();
-    process.off('SIGINT', onSignal);
-    process.off('SIGTERM', onSignal);
+    try { await endHarness(); } catch (e) { console.error(`\n✖ ${e.message}`); exitCode = 1; }
   }
   return exitCode;
 }
