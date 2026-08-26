@@ -63,15 +63,25 @@ async function groqChat(messages: readonly ChatMessage[], timeoutMs: number, api
 }
 
 /**
- * JSON 응답을 기대하는 채팅 완성 — Ollama 먼저, 실패 시 Groq(키 있을 때만).
- * 둘 다 실패하면 마지막 에러를 던진다(호출부가 graceful 처리).
+ * JSON 응답을 기대하는 채팅 완성 — Groq 먼저, 키가 없거나 실패하면 로컬 Ollama.
+ *
+ * Groq이 1순위인 이유: 앱은 Vercel에서 돌기 때문에 localhost:11434(내 PC의 Ollama)에
+ * 닿을 수가 없다. Ollama를 먼저 시도하면 배포 환경에서는 매번 타임아웃을 기다렸다가
+ * 넘어가야 하고, PC가 꺼져 있으면 폰에서 AI 기능이 통째로 죽는다.
+ * Ollama는 이제 키가 없거나 Groq이 막혔을 때의 뒷문으로만 쓴다.
  */
 export async function chatCompleteJson(messages: readonly ChatMessage[], timeoutMs = 60_000): Promise<LlmResult> {
-  try {
-    return await ollamaChat(messages, timeoutMs);
-  } catch (ollamaError) {
-    const groqKey = process.env.GROQ_API_KEY;
-    if (!groqKey) throw ollamaError;
-    return await groqChat(messages, timeoutMs, groqKey);
+  const groqKey = process.env.GROQ_API_KEY;
+  if (groqKey) {
+    try {
+      return await groqChat(messages, timeoutMs, groqKey);
+    } catch (groqError) {
+      try {
+        return await ollamaChat(messages, timeoutMs);
+      } catch {
+        throw groqError; // 뒷문도 막혔으면 원래 실패 이유를 보여준다
+      }
+    }
   }
+  return await ollamaChat(messages, timeoutMs);
 }

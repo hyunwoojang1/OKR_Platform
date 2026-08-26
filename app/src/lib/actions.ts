@@ -473,6 +473,13 @@ export async function toggleInitiativeDone(form: FormData) {
 
 // v4 위저드 AI 초안: 목표 한 줄 → 지표(KR)·주별 계획 제안. 로컬 Ollama(무료) 우선.
 // 제안만 한다 — 저장은 사용자가 검토 후 확정할 때(createGoalPlan)만 일어난다.
+/**
+ * 모델이 붙이는 "1주차:" 같은 접두어 — 화면이 이미 "N주" 라벨을 다니까 중복이라 떼어낸다.
+ * (?![가-힣]) 가 핵심: 이게 없으면 "7주간 계획"의 '7주'와 "주 3회 러닝"의 '주 3'까지
+ * 접두어로 오인해 "간 계획", "회 러닝"으로 잘라먹는다.
+ */
+const WEEK_PREFIX = /^[\[(（【]?\s*(?:week\s*)?(?:\d+\s*주\s*차?|주\s*\d+|week\s*\d+)(?![가-힣])\s*[\])）】]?\s*[:：)\-–·]?\s*/i;
+
 export type GoalSuggestion = {
   krs: { title: string; target: number; unit: string }[];
   weeks: string[];
@@ -558,8 +565,7 @@ export async function suggestGoalPlan(payload: {
     .filter((k) => k.title && k.target > 0)
     .slice(0, 3);
   const weeks = (Array.isArray(obj.weeks) ? obj.weeks : [])
-    // UI가 이미 "N주" 라벨을 붙이므로 모델이 넣은 "1주차:" 접두어는 중복 — 제거
-    .map((w) => String(w ?? '').trim().replace(/^(\d+\s*주차?|주\s*\d+)\s*[:：)-]?\s*/, '').slice(0, 60))
+    .map((w) => String(w ?? '').trim().replace(WEEK_PREFIX, '').slice(0, 60))
     .slice(0, weekCount);
   // 지표·주별 계획 중 하나라도 건졌으면 성공 — 유령 초안(주별만 쓰는 쪽)이 지표 파싱 실패에 볼모 잡히지 않게.
   if (krs.length === 0 && weeks.length === 0) return { ok: false, message: '쓸 만한 제안이 안 나왔어요. 다시 시도해주세요.' };
