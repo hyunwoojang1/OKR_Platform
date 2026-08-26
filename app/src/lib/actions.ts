@@ -495,7 +495,7 @@ export async function suggestGoalPlan(payload: {
   areaName: string;
   weekCount: number;
   /** 사용자가 이미 고른 지표 — 주별 계획이 이 지표들을 향해 쓰이도록 프롬프트에 먹인다. */
-  krs?: { title: string; target: number; unit: string; start?: number; cadence?: 'total' | 'weekly' }[];
+  krs?: { title: string; target: number; unit: string; start?: number; cadence?: 'total' | 'weekly'; mode?: 'check' | 'number' | 'text' }[];
 }): Promise<GoalSuggestionResult> {
   const { chatCompleteJson } = await import('./llm');
   const title = payload.title.trim().slice(0, 200);
@@ -665,7 +665,7 @@ export async function createGoalPlan(payload: {
   areaId: string;
   title: string;
   dueDate: string | null;
-  krs: { title: string; target: number; unit: string; start?: number; cadence?: 'total' | 'weekly' }[];
+  krs: { title: string; target: number; unit: string; start?: number; cadence?: 'total' | 'weekly'; mode?: 'check' | 'number' | 'text' }[];
   weeks: { weekOf: string; title: string }[];
   parentId?: string | null;
 }) {
@@ -688,20 +688,22 @@ export async function createGoalPlan(payload: {
   }
 
   const krRows = payload.krs
-    .filter((k) => k.title.trim() && Number.isFinite(k.target) && k.target > 0)
+    // 내용형은 목표 개수 없이도 성립한다 — 적은 게 기록으로 쌓이는 게 목적인 지표가 있다.
+    .filter((k) => k.title.trim() && (k.mode === 'text' || (Number.isFinite(k.target) && k.target > 0)))
     .map((k) => {
       const cadence = k.cadence === 'weekly' ? 'weekly' : 'total';
       const start = cadence === 'total' && Number.isFinite(k.start) && (k.start as number) >= 0 ? (k.start as number) : 0;
       return {
         objective_id: obj.id,
         title: k.title.trim().slice(0, 200),
-        target_value: k.target,
+        target_value: Number.isFinite(k.target) && k.target > 0 ? k.target : null,
         unit: k.unit.trim().slice(0, 20),
         source: 'manual' as const,
         start_value: start,
         // 시작값이 있으면 현재값도 거기서 출발 — 진행률 (현재-시작)/(목표-시작)이 0%부터 시작하게
         current_value: start,
         cadence,
+        input_mode: k.mode ?? 'number',
       };
     });
   if (krRows.length > 0) {
@@ -742,7 +744,7 @@ export async function updateGoalPlan(payload: {
   areaId: string;
   title: string;
   dueDate: string | null;
-  krs: { id?: string; title: string; target: number; unit: string; start?: number; cadence?: 'total' | 'weekly' }[];
+  krs: { id?: string; title: string; target: number; unit: string; start?: number; cadence?: 'total' | 'weekly'; mode?: 'check' | 'number' | 'text' }[];
   weeks: { weekOf: string; title: string }[];
 }) {
   const id = must(payload.id, '목표');
@@ -760,7 +762,7 @@ export async function updateGoalPlan(payload: {
   if (exErr) throw new Error(`지표 조회 실패: ${exErr.message}`);
   const existing = new Map((existingRows ?? []).map((r) => [r.id as string, Number(r.current_value)]));
 
-  const valid = payload.krs.filter((k) => k.title.trim() && Number.isFinite(k.target) && k.target > 0);
+  const valid = payload.krs.filter((k) => k.title.trim() && (k.mode === 'text' || (Number.isFinite(k.target) && k.target > 0)));
   const keptIds = new Set<string>();
 
   for (const k of valid) {
@@ -768,10 +770,12 @@ export async function updateGoalPlan(payload: {
     const start = cadence === 'total' && Number.isFinite(k.start) && (k.start as number) >= 0 ? (k.start as number) : 0;
     const base = {
       title: k.title.trim().slice(0, 200),
-      target_value: k.target,
+      // 내용형은 목표 개수가 없어도 성립한다 — 그때는 null로 두고 진행률 대신 기록만 쌓는다.
+      target_value: k.target > 0 ? k.target : null,
       unit: k.unit.trim().slice(0, 20),
       start_value: start,
       cadence,
+      input_mode: k.mode ?? 'number',
     };
     if (k.id && existing.has(k.id)) {
       keptIds.add(k.id);

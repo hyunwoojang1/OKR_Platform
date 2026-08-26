@@ -17,6 +17,10 @@ export type KeyResult = {
   start_value: number;
   /** total=기간 누적/도달, weekly=매주 반복(current_value=이번 주 실적) */
   cadence: 'total' | 'weekly';
+  /** 체크할 때 무엇을 받나 — check=톡 한 번, number=숫자, text=내용 적기 */
+  input_mode: 'check' | 'number' | 'text';
+  /** check형이 한 번에 오르는 양 (보통 1) */
+  step: number;
 };
 
 /**

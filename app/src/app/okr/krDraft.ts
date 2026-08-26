@@ -12,7 +12,32 @@ export type KRDraft = {
   unit: string;
   start?: string;
   cadence?: 'total' | 'weekly';
+  /**
+   * 체크할 때 무엇을 받을지. 이름으로 성격을 추측하던 하드코딩을 대신한다.
+   *   check  — 톡 한 번에 step(보통 1)만큼 (강의 3회, 자소서 12곳)
+   *   number — 숫자를 받는다 (오늘 몇 시간·몇 문제·몇 km)
+   *   text   — 내용을 받는다 (지원한 회사명, 틀린 유형). 개수는 1씩 오르고 적은 건 기록에 남는다
+   */
+  mode?: KrMode;
 };
+
+export type KrMode = 'check' | 'number' | 'text';
+
+export const KR_MODES: { key: KrMode; label: string; hint: string }[] = [
+  { key: 'check', label: '완료만', hint: '누르면 한 번으로 세요' },
+  { key: 'number', label: '숫자', hint: '몇 시간·몇 개인지 적어요' },
+  { key: 'text', label: '내용', hint: '회사명처럼 적어 남겨요' },
+];
+
+/** 단위만 보고 고르는 첫 제안 — 사용자가 바꾸면 그 선택이 이긴다. */
+export function guessMode(k: Pick<KRDraft, 'target' | 'unit'>): KrMode {
+  const u = (parseAmount(k.target).unit || k.unit || '').trim();
+  return ['회', '번', '개', '권', '곳', '건'].includes(u) ? 'check' : 'number';
+}
+
+export function krMode(k: KRDraft): KrMode {
+  return k.mode ?? guessMode(k);
+}
 
 /** "30km" → { num: 30, unit: 'km' }. 숫자가 없으면 num 0. */
 export function parseAmount(raw: string | undefined): { num: number; unit: string } {
@@ -41,13 +66,24 @@ export function krExplain(k: KRDraft): string {
   const t = parseAmount(k.target);
   const s = parseAmount(k.start);
   const unit = krUnit(k);
-  if (k.cadence === 'weekly') return `매주 ${t.num}${unit} 하면 100%. 월요일마다 0에서 다시 시작해요.`;
-  if (s.num > 0 && s.num !== t.num) return `${s.num}${unit}에서 ${t.num}${unit}이 되면 100%예요.`;
-  return `0에서 ${t.num}${unit}을 채우면 100%예요.`;
+  const how =
+    krMode(k) === 'text' ? ' 체크할 때 내용을 적어 남겨요.'
+    : krMode(k) === 'number' ? ' 체크할 때 숫자를 적어요.'
+    : '';
+  if (krMode(k) === 'text' && t.num === 0) {
+    return k.cadence === 'weekly'
+      ? '적은 내용이 이번 주 기록으로 쌓여요. 월요일마다 새로 시작해요.'
+      : '적은 내용이 목표 화면에 쌓여요.';
+  }
+  if (k.cadence === 'weekly') return `매주 ${t.num}${unit} 하면 100%. 월요일마다 0에서 다시 시작해요.${how}`;
+  if (s.num > 0 && s.num !== t.num) return `${s.num}${unit}에서 ${t.num}${unit}이 되면 100%예요.${how}`;
+  return `0에서 ${t.num}${unit}을 채우면 100%예요.${how}`;
 }
 
 export function isKrFilled(k: KRDraft): boolean {
-  return !!k.title.trim() && parseAmount(k.target).num > 0;
+  // 내용형은 목표 개수가 없어도 성립한다 ("틀린 유형 적어두기"처럼 세는 게 목적이 아닌 경우)
+  if (!k.title.trim()) return false;
+  return krMode(k) === 'text' || parseAmount(k.target).num > 0;
 }
 
 /** 서버로 보낼 형태 — 원문 문자열을 숫자·단위로 확정한다. */
@@ -59,6 +95,7 @@ export function toKrPayload(k: KRDraft) {
     unit: krUnit(k),
     start: parseAmount(k.start).num > 0 ? parseAmount(k.start).num : undefined,
     cadence: (k.cadence ?? 'total') as 'total' | 'weekly',
+    mode: krMode(k),
   };
 }
 

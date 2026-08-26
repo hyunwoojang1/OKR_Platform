@@ -54,6 +54,7 @@ export default function EditGoalForm({
       unit: k.unit ?? '',
       start: Number(k.start_value) > 0 ? `${Number(k.start_value)}${k.unit ?? ''}` : undefined,
       cadence: k.cadence ?? 'total',
+      mode: k.input_mode ?? undefined,
     })),
   );
 

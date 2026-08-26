@@ -6,7 +6,7 @@ import { createGoalPlan, normalizeKrDrafts, suggestGoalPlan } from '@/lib/action
 import type { Area } from '@/lib/types';
 import { kstToday } from '@/lib/types';
 import KrCard from '../KrCard';
-import { type KRDraft, MAX_KRS, krSentence, krUnit, parseAmount } from '../krDraft';
+import { type KRDraft, MAX_KRS, krSentence, krUnit, parseAmount, isKrFilled, krMode } from '../krDraft';
 
 type UpcomingEvent = { title: string; date: string };
 
@@ -207,8 +207,9 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
   const effWeeks = isCustomDueValid ? weeksUntil(customDue) : dueWeeks;
   const dueDate = isCustomDueValid ? customDue : kstMondayPlus(dueWeeks);
 
-  const validKrCount = krs.filter((k) => k.title.trim() && parseAmount(k.target).num > 0).length;
-  const hasTitleWithoutNumber = krs.some((k) => k.title.trim() && parseAmount(k.target).num === 0);
+  const validKrCount = krs.filter(isKrFilled).length;
+  // 내용형은 숫자가 없는 게 정상이라 재촉하지 않는다
+  const hasTitleWithoutNumber = krs.some((k) => k.title.trim() && krMode(k) !== 'text' && parseAmount(k.target).num === 0);
 
   const canNext =
     step === 0 ? title.trim().length > 0
@@ -358,13 +359,14 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
   const finalKrs =
     reviewedKrs ??
     krs
-      .filter((k) => k.title.trim() && parseAmount(k.target).num > 0)
+      .filter(isKrFilled)
       .map((k) => ({
         title: k.title.trim(),
         target: parseAmount(k.target).num,
         unit: krUnit(k),
         start: parseAmount(k.start).num > 0 ? parseAmount(k.start).num : undefined,
         cadence: (k.cadence ?? 'total') as 'total' | 'weekly',
+        mode: krMode(k),
       }));
 
   function acceptGhost(i: number) {
@@ -557,10 +559,10 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
         {step === 2 && (
           <div className="space-y-5">
             <div className="text-xl font-medium leading-relaxed tracking-tight" style={{ textWrap: 'pretty' }}>
-              다 됐는지 아닌지,<br />무엇으로 판단할까요?
+              무엇을 하면<br />나아가는 건가요?
             </div>
             <div className="text-sm leading-relaxed" style={{ color: 'var(--ink-3)' }}>
-              숫자로 셀 수 있는 걸로요. <span style={{ color: 'var(--ink-2)' }}>예: 러닝이라면 “러닝 거리 30km”.</span> 1개면 충분해요.
+              숫자로 셀 수 없는 것도 괜찮아요. <span style={{ color: 'var(--ink-2)' }}>지원한 회사 이름처럼 적어 남기는 것도 돼요.</span> 1개면 충분해요.
             </div>
             <button
               onClick={requestAiDraft}
