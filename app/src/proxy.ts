@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySession, signSession, sessionCookie } from '@/lib/session';
 
-// 공개 경로: 인증·PWA 자산·크론(자체 시크릿 검증)만. 나머지는 전부 세션 필요.
-const PUBLIC_PREFIXES = ['/api/auth/', '/api/cron/', '/_next/', '/icons/'];
+// 공개 경로: 인증·PWA 자산·크론·수집기(각자 시크릿 검증)만. 나머지는 전부 세션 필요.
+const PUBLIC_PREFIXES = ['/api/auth/', '/api/cron/', '/api/ingest/', '/_next/', '/icons/'];
 const PUBLIC_EXACT = ['/manifest.webmanifest', '/sw.js', '/favicon.ico', '/login'];
 
 export default async function proxy(req: NextRequest) {
