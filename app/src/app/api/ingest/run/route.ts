@@ -13,6 +13,9 @@ const RUN_WORDS = /러닝|달리기|조깅|run|뛰/i;
 const MAX_KM = 200;
 const MAX_MIN = 24 * 60;
 const AUTO_TAG = '(건강앱 자동)';
+// 같은 러닝이 다시 들어오는 건 자정 전후 몇 시간이면 충분히 걸러진다.
+// 너무 길게 잡으면 "지난주에도 딱 5.00km 뛴" 진짜 러닝을 중복으로 오인한다.
+const DEDUPE_WINDOW_MS = 30 * 3600_000;
 
 // Supabase가 간헐적으로 'JWT issued at future'(노드 시계 오차)를 뱉는다 — 자동 기록이
 // 그것 때문에 통째로 유실되면 안 되므로 짧게 재시도한다.
@@ -66,7 +69,7 @@ export async function POST(req: NextRequest) {
     const dayStart = new Date(`${today}T00:00:00+09:00`).toISOString();
     const dayEnd = new Date(new Date(dayStart).getTime() + 86400_000).toISOString();
 
-    const [objRows, krRows, areaRows, prevRows] = await Promise.all([
+    const [objRows, krRows, areaRows, prevRows, recentRows] = await Promise.all([
       withRetry('목표 조회', () => db().from('objectives').select('id,title,status').eq('status', 'active')),
       withRetry('지표 조회', () => db().from('key_results').select('*')),
       withRetry('영역 조회', () => db().from('areas').select('id,name').eq('archived', false)),
@@ -76,10 +79,32 @@ export async function POST(req: NextRequest) {
           .like('note', `%${AUTO_TAG}`).gte('logged_at', dayStart).lt('logged_at', dayEnd)
           .order('logged_at', { ascending: false }).limit(1),
       ),
+      // 최근 자동 기록들 — 거리·시간이 완전히 같으면 같은 러닝으로 보고 통째로 건너뛴다.
+      // (자정 직후 단축어의 24시간 창에 어제 러닝이 남아 다시 들어오는 경우 방어)
+      withRetry('최근 기록 조회', () =>
+        db().from('session_logs').select('id,metrics,logged_at')
+          .like('note', `%${AUTO_TAG}`).gte('logged_at', new Date(Date.now() - DEDUPE_WINDOW_MS).toISOString())
+          .order('logged_at', { ascending: false }).limit(10),
+      ),
     ]);
     const activeIds = new Set((objRows as Pick<Objective, 'id' | 'title' | 'status'>[]).map((o) => o.id));
     const krs = (krRows as KeyResult[]).filter((k) => activeIds.has(k.objective_id));
     const exerciseArea = (areaRows as { id: string; name: string }[]).find((a) => /운동|헬스|러닝/.test(a.name)) ?? null;
+
+    // 지문 대조: 거리(그리고 있으면 시간)가 완전히 같은 기록이 최근에 있으면 같은 러닝이다.
+    // 같은 거리를 뛸 수는 있어도 소수점까지 같은 일이 30시간 안에 두 번 나오긴 어렵다.
+    const recent = recentRows as { id: string; metrics: { v: number; u: string }[] | null; logged_at: string }[];
+    const sameRun = recent.find((r) => {
+      const rk = r.metrics?.find((m) => m.u === 'km')?.v;
+      const rm = r.metrics?.find((m) => m.u === '분')?.v ?? null;
+      return rk === km && rm === (min ?? null);
+    });
+    if (sameRun) {
+      return NextResponse.json({
+        ok: true, km, addedKm: 0, duplicate: true,
+        note: `이미 기록된 러닝과 완전히 동일 (${sameRun.logged_at.slice(0, 16)}) — 건너뜀`,
+      });
+    }
 
     const prevLog = (prevRows as { id: string; metrics: { v: number; u: string }[] | null }[])[0] ?? null;
     const prevKm = prevLog?.metrics?.find((m) => m.u === 'km')?.v ?? 0;
