@@ -23,7 +23,6 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   const daysInMonth = new Date(y, mo, 0).getDate();
   const monthStart = new Date(`${month}-01T00:00:00+09:00`).toISOString();
   const monthEnd = new Date(new Date(`${month}-${String(daysInMonth).padStart(2, '0')}T00:00:00+09:00`).getTime() + 86400_000).toISOString();
-  const monthEndDate = `${month}-${String(daysInMonth).padStart(2, '0')}`;
   // 주간 뷰는 월 경계에 걸친 주도 그려야 하므로 앞뒤 7일씩 여유를 두고 가져온다
   const padStart = new Date(new Date(monthStart).getTime() - 7 * 86400_000).toISOString();
   const padEnd = new Date(new Date(monthEnd).getTime() + 7 * 86400_000).toISOString();

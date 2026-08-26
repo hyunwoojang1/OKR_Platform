@@ -120,12 +120,13 @@ export async function completeChildRollup(childId: string): Promise<void> {
     const child = data as Pick<Objective, 'id' | 'title' | 'area_id'> & { parent_id: string | null } | null;
     if (!child?.parent_id) return;
     await ensureGoalAggKR(child.parent_id);
-    await db().from('session_logs').insert({
+    const { error } = await db().from('session_logs').insert({
       objective_id: child.parent_id,
       area_id: child.area_id,
       kind: 'check',
       note: `소목표 달성 — ${child.title}`,
     });
+    if (error) throw new Error(`소목표 달성 기록 실패: ${error.message}`);
   } catch (e) {
     console.error('[goal-rollup]', e);
   }

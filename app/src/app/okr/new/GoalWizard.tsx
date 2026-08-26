@@ -339,6 +339,9 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
   // 검토 단계 진입 시 AI가 지표 표기를 한 번 정리 — 실패는 조용히 무시(로컬 해석 사용).
   useEffect(() => {
     if (step !== 4) return;
+    // 검토 단계에 다시 들어오면 지난 정리 결과를 먼저 비운다 — 안 비우면 지표를 고치고 돌아왔을 때
+    // 예전 초안이 잠깐 보인다. 이 setState는 단계 전환 시 1회뿐이라 연쇄 렌더가 안 난다.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setReviewedKrs(null);
     const raw = krs
       .filter((k) => k.title.trim() && parseAmount(k.target).num > 0)

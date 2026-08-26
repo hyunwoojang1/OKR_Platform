@@ -25,14 +25,19 @@ export async function sendJobToTask(form: FormData) {
   if (error) throw new Error(`할일 생성 실패: ${error.message}`);
 
   // goalhub 브리지 공고면 「보냄」 마킹 (econ 공고는 goalhub에 마킹 사본 upsert)
+  // 할일은 이미 만들어졌다 — 마킹만 실패하면 같은 공고를 또 보낼 수 있으므로 반드시 알려준다.
+  let markError: { message: string } | null = null;
   if (origin === 'goalhub' && id) {
-    await db().from('job_postings').update({ sent_to_task: true }).eq('id', id);
+    const { error } = await db().from('job_postings').update({ sent_to_task: true }).eq('id', id);
+    markError = error;
   } else {
-    await db().from('job_postings').upsert(
+    const { error } = await db().from('job_postings').upsert(
       { source: 'econ', company, title, url, sent_to_task: true },
       { onConflict: 'url' },
     );
+    markError = error;
   }
+  if (markError) throw new Error(`할일은 만들었지만 「보냄」 표시에 실패했습니다: ${markError.message}`);
   revalidatePath('/hub');
   revalidatePath('/');
 }

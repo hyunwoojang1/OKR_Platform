@@ -54,7 +54,7 @@ export function EventOptions({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label="마감 여부 바꾸기"
+        aria-label={`${event.title} 마감 여부·지표 바꾸기`}
         title={linked ? `끝내면 '${linked.title}'이(가) 오릅니다` : manual ? '내가 정한 값' : '제목으로 짐작한 값'}
         className="pressable shrink-0 text-[11px] opacity-30 hover:opacity-100"
         style={{ color: linked || manual ? 'var(--accent-deep)' : 'var(--ink-4)', opacity: linked ? 1 : undefined }}
@@ -93,7 +93,7 @@ export function EventOptions({
           <select
             name="key_result_id"
             defaultValue={event.key_result_id ?? ''}
-            aria-label="끝내면 오를 지표"
+            aria-label={`${event.title} 끝내면 오를 지표`}
             onChange={(e) => e.currentTarget.form?.requestSubmit()}
             className="min-w-0 flex-1 rounded-lg border px-1.5 py-1 text-[11.5px]"
             style={{ borderColor: 'var(--line-strong)', background: 'var(--surface)' }}

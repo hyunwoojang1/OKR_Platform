@@ -51,10 +51,13 @@ export async function GET(req: NextRequest) {
 
   // refresh_token은 캘린더 동기화용으로 저장 (있을 때만 갱신)
   if (tokens.refresh_token) {
-    await db().from('oauth_tokens').upsert(
+    const { error } = await db().from('oauth_tokens').upsert(
       { provider: 'google', email, refresh_token: tokens.refresh_token, updated_at: new Date().toISOString() },
       { onConflict: 'provider' },
     );
+    // 로그인 자체는 성공시킨다 — 이 토큰은 달력 동기화용이라, 여기서 막으면 로그인이 통째로 실패한다.
+    // 대신 조용히 넘기지는 않는다: 이게 실패하면 나중에 "달력이 왜 동기화가 안 되지"로 나타난다.
+    if (error) console.error('[auth] refresh_token 저장 실패 — 달력 동기화가 안 될 수 있음:', error.message);
   }
 
   const session = await signSession({ email, mode: 'google', iat: Math.floor(Date.now() / 1000) }, config.sessionSecret);

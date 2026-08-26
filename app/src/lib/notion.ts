@@ -26,9 +26,22 @@ async function call<T>(path: string, init: RequestInit): Promise<T> {
   return JSON.parse(text) as T;
 }
 
+/**
+ * 노션 속성 하나 — 이 앱이 실제로 읽는 모양만 적는다.
+ * 노션의 전체 속성 스키마는 훨씬 크지만, 안 읽는 것까지 적으면 유지가 안 된다.
+ */
+export type NotionProp = {
+  title?: { plain_text?: string }[];
+  rich_text?: { plain_text?: string; href?: string | null }[];
+  url?: string | null;
+  date?: { start?: string | null } | null;
+  select?: { name?: string } | null;
+  multi_select?: { name: string }[];
+};
+
 export type NotionPage = {
   id: string;
-  properties: Record<string, any>;
+  properties: Record<string, NotionProp | undefined>;
 };
 
 /** 데이터소스(=DB) 전체 조회. 페이지네이션 따라가되 상한을 둔다. */
@@ -56,14 +69,14 @@ export async function patchPage(pageId: string, properties: Record<string, unkno
 // ── 속성 읽기 헬퍼 (노션 응답은 타입별로 모양이 달라 매번 분기하면 지저분해진다) ──
 export function readTitle(p: NotionPage, name: string): string {
   const v = p.properties?.[name];
-  return (v?.title ?? []).map((x: any) => x.plain_text ?? '').join('').trim();
+  return (v?.title ?? []).map((x) => x.plain_text ?? '').join('').trim();
 }
 export function readUrl(p: NotionPage, name: string): string {
   return (p.properties?.[name]?.url ?? '').trim();
 }
 /** rich_text 속성에서 URL 뽑기 — 걸린 링크(href)를 먼저 보고, 없으면 본문 텍스트를 본다. */
 export function readRichTextUrl(p: NotionPage, name: string): string {
-  const parts = (p.properties?.[name]?.rich_text ?? []) as any[];
+  const parts = p.properties?.[name]?.rich_text ?? [];
   const href = parts.find((x) => x?.href)?.href;
   if (href) return String(href).trim();
   const plain = parts.map((x) => x?.plain_text ?? '').join('').trim();
@@ -80,5 +93,5 @@ export function readSelect(p: NotionPage, name: string): string | null {
   return p.properties?.[name]?.select?.name ?? null;
 }
 export function readMultiSelect(p: NotionPage, name: string): string[] {
-  return (p.properties?.[name]?.multi_select ?? []).map((o: any) => o.name as string);
+  return (p.properties?.[name]?.multi_select ?? []).map((o) => o.name);
 }

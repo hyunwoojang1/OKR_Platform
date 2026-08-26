@@ -28,12 +28,17 @@ export async function sendPushToAll(payload: PushPayload): Promise<{ sent: numbe
         { TTL: 3600 },
       );
       sent += 1;
-      await db().from('push_subscriptions').update({ last_success_at: new Date().toISOString() }).eq('id', sub.id);
+      // 발송 성공 기록은 부가 정보 — 실패해도 발송 루프를 멈추지 않고 로그만 남긴다.
+      const { error: okErr } = await db()
+        .from('push_subscriptions').update({ last_success_at: new Date().toISOString() }).eq('id', sub.id);
+      if (okErr) console.error('푸시 성공 시각 기록 실패:', okErr.message);
     } catch (e: unknown) {
       failed += 1;
       const status = (e as { statusCode?: number }).statusCode;
       if (status === 404 || status === 410) {
-        await db().from('push_subscriptions').update({ disabled: true }).eq('id', sub.id);
+        const { error: offErr } = await db()
+          .from('push_subscriptions').update({ disabled: true }).eq('id', sub.id);
+        if (offErr) console.error('죽은 구독 비활성화 실패:', offErr.message);
       } else {
         console.error('push 발송 실패:', status, sub.endpoint.slice(0, 60));
       }

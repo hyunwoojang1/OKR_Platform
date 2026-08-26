@@ -3,6 +3,8 @@ import { config } from './config';
 
 // ★ 허브 읽기 전용 층 — econ·auction이 사는 public 스키마.
 // 안전 원칙: 이 모듈에서는 SELECT만 한다. INSERT/UPDATE/DELETE 금지.
+// db.ts 와 같은 이유(supabase-js 제네릭 슬롯)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type PublicClient = SupabaseClient<any, any, 'public', any, any>;
 let cached: PublicClient | null = null;
 function pub(): PublicClient {

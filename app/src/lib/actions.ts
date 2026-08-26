@@ -148,13 +148,15 @@ export async function logKrProgress(form: FormData) {
 
   // 기록은 지표와 함께 남긴다 — 내용형에서 "언제 어디 지원했는지"를 되짚는 근거가 된다.
   const body = note || `${kr.title} ${delta}${kr.unit ?? ''}`;
-  await db().from('session_logs').insert({
-    objective_id: kr.objective_id,
-    key_result_id: kr.id,
-    kind: 'check',
-    note: body,
-    metrics: kr.input_mode === 'text' ? null : [{ v: delta, u: kr.unit || '' }],
-  });
+  await run('기록 남기기', () =>
+    db().from('session_logs').insert({
+      objective_id: kr.objective_id,
+      key_result_id: kr.id,
+      kind: 'check',
+      note: body,
+      metrics: kr.input_mode === 'text' ? null : [{ v: delta, u: kr.unit || '' }],
+    }),
+  );
 
   revalidatePath('/');
   revalidatePath('/okr');
@@ -180,7 +182,7 @@ export async function undoKrProgress(form: FormData) {
       db().from('key_results').update({ current_value: next }).eq('id', log.key_result_id!),
     );
   }
-  await db().from('session_logs').delete().eq('id', logId);
+  await run('기록 삭제', () => db().from('session_logs').delete().eq('id', logId));
   revalidatePath('/');
   revalidatePath('/okr');
   if (log.objective_id) revalidatePath(`/okr/${log.objective_id}`);
@@ -202,12 +204,14 @@ export async function recordWeeklyMetric(form: FormData) {
   if (!kr) throw new Error('지표를 찾을 수 없습니다');
 
   await run('지표 기록', () => db().from('key_results').update({ current_value: value }).eq('id', id));
-  await db().from('session_logs').insert({
-    objective_id: kr.objective_id,
-    kind: 'log',
-    note: `${kr.title} ${value}${kr.unit}`,
-    metrics: [{ v: value, u: kr.unit || '' }],
-  });
+  await run('기록 남기기', () =>
+    db().from('session_logs').insert({
+      objective_id: kr.objective_id,
+      kind: 'log',
+      note: `${kr.title} ${value}${kr.unit}`,
+      metrics: [{ v: value, u: kr.unit || '' }],
+    }),
+  );
   revalidatePath('/');
   revalidatePath('/okr');
 }
@@ -276,18 +280,26 @@ export async function toggleTask(form: FormData) {
       const { data: ini } = await db().from('initiatives').select('objective_id').eq('id', data.initiative_id).maybeSingle();
       objectiveId = ini?.objective_id ?? null;
     }
-    await db().from('session_logs').insert({
-      task_id: id, objective_id: objectiveId, area_id: data?.area_id ?? null, kind: 'check', note: data?.title ?? null,
-    });
+    await run('체크 기록', () =>
+      db().from('session_logs').insert({
+        task_id: id, objective_id: objectiveId, area_id: data?.area_id ?? null, kind: 'check', note: data?.title ?? null,
+      }),
+    );
     // 목표에서 내려온 할일이면 그 주간 계획도 같이 완료 (지금까지 따로 놀던 빈틈)
     if (data?.initiative_id) {
-      await db().from('initiatives').update({ status: 'done' }).eq('id', data.initiative_id);
+      await run('주간 계획 완료', () =>
+        db().from('initiatives').update({ status: 'done' }).eq('id', data.initiative_id!),
+      );
     }
   } else {
     // 되돌리기 = 흔적도 되돌린다. 안 지우면 체크·해제를 반복할 때마다 타임라인에 유령 기록이 쌓인다.
-    await db().from('session_logs').delete().eq('task_id', id).eq('kind', 'check');
+    await run('체크 기록 삭제', () =>
+      db().from('session_logs').delete().eq('task_id', id).eq('kind', 'check'),
+    );
     if (data?.initiative_id) {
-      await db().from('initiatives').update({ status: 'active' }).eq('id', data.initiative_id);
+      await run('주간 계획 되돌리기', () =>
+        db().from('initiatives').update({ status: 'active' }).eq('id', data.initiative_id!),
+      );
     }
   }
   revalidatePath('/');
@@ -311,7 +323,7 @@ export async function updateTask(form: FormData) {
 /** 할일 지우기. 딸린 완료 기록도 같이 치운다 — 없는 할일을 가리키는 기록만 남으면 타임라인이 거짓말을 한다. */
 export async function deleteTask(form: FormData) {
   const id = must(form.get('id'), '할일');
-  await db().from('session_logs').delete().eq('task_id', id);
+  await run('기록 삭제', () => db().from('session_logs').delete().eq('task_id', id));
   await run('할일 삭제', () => db().from('daily_tasks').delete().eq('id', id));
   revalidatePath('/');
   revalidatePath('/calendar');
@@ -338,7 +350,7 @@ export async function updateHabit(form: FormData) {
  */
 export async function deleteHabit(form: FormData) {
   const id = must(form.get('id'), '루틴');
-  await db().from('habit_logs').delete().eq('habit_id', id);
+  await run('루틴 기록 삭제', () => db().from('habit_logs').delete().eq('habit_id', id));
   await run('루틴 삭제', () => db().from('habits').delete().eq('id', id));
   revalidatePath('/');
 }
@@ -399,7 +411,9 @@ export async function promoteTaskToRoutine(form: FormData) {
     const { data: habit } = await db()
       .from('habits').select('id').eq('title', task.title).order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (habit) {
-      await db().from('habit_logs').upsert({ habit_id: habit.id, date: kstToday(), done: true }, { onConflict: 'habit_id,date' });
+      await run('오늘 체크 이어받기', () =>
+        db().from('habit_logs').upsert({ habit_id: habit.id, date: kstToday(), done: true }, { onConflict: 'habit_id,date' }),
+      );
     }
   }
   await run('할일 정리', () => db().from('daily_tasks').delete().eq('id', id));
@@ -510,8 +524,8 @@ export async function toggleEventDone(form: FormData) {
     // 되돌리기 — 딸려 만들어진 할일과 기록도 같이 치운다
     const { data: tasks } = await db().from('daily_tasks').select('id').eq('source_ref', id).eq('source', 'job_posting');
     for (const t of tasks ?? []) {
-      await db().from('session_logs').delete().eq('task_id', t.id);
-      await db().from('daily_tasks').delete().eq('id', t.id);
+      await run('기록 삭제', () => db().from('session_logs').delete().eq('task_id', t.id));
+      await run('할일 삭제', () => db().from('daily_tasks').delete().eq('id', t.id));
     }
     await run('완료 해제', () => db().from('calendar_events').update({ done_at: null }).eq('id', id));
     revalidatePath('/');
@@ -531,16 +545,18 @@ export async function toggleEventDone(form: FormData) {
     const dueDate = full
       ? new Date(new Date(full.starts_at).getTime() + 9 * 3600_000).toISOString().slice(0, 10)
       : today;
-    await db().from('daily_tasks').insert({
-      title: ev.title,
-      date: today,
-      done: true,
-      done_at: new Date().toISOString(),
-      due_date: dueDate,
-      source: 'job_posting',
-      source_ref: id,
-      key_result_id: ev.key_result_id,
-    });
+    await run('오늘 할일 등재', () =>
+      db().from('daily_tasks').insert({
+        title: ev.title,
+        date: today,
+        done: true,
+        done_at: new Date().toISOString(),
+        due_date: dueDate,
+        source: 'job_posting',
+        source_ref: id,
+        key_result_id: ev.key_result_id,
+      }),
+    );
   }
 
   // ③ 연결된 지표가 있으면 올리고 기록도 남긴다
@@ -550,17 +566,21 @@ export async function toggleEventDone(form: FormData) {
     if (kr) {
       const delta = Number(kr.step) || 1;
       const next = Math.round((Number(kr.current_value) + delta) * 100) / 100;
-      await db().from('key_results').update({ current_value: next }).eq('id', kr.id);
-      await db().from('session_logs').insert({
-        objective_id: kr.objective_id,
-        key_result_id: kr.id,
-        kind: 'check',
-        note: ev.title,
-        metrics: [{ v: delta, u: kr.unit || '' }],
-      });
+      await run('지표 반영', () =>
+        db().from('key_results').update({ current_value: next }).eq('id', kr.id),
+      );
+      await run('기록 남기기', () =>
+        db().from('session_logs').insert({
+          objective_id: kr.objective_id,
+          key_result_id: kr.id,
+          kind: 'check',
+          note: ev.title,
+          metrics: [{ v: delta, u: kr.unit || '' }],
+        }),
+      );
     }
   } else {
-    await db().from('session_logs').insert({ kind: 'check', note: ev.title });
+    await run('기록 남기기', () => db().from('session_logs').insert({ kind: 'check', note: ev.title }));
   }
 
   revalidatePath('/');
@@ -755,9 +775,11 @@ export async function toggleInitiativeDone(form: FormData) {
     // 체크 = 자동 로그 (실패해도 체크는 유지)
     const { data } = await db().from('initiatives').select('title,area_id,milestone_id').eq('id', id).maybeSingle();
     const oid = (form.get('objective_id') as string)?.trim() || null;
-    await db().from('session_logs').insert({
-      objective_id: oid, area_id: data?.area_id ?? null, kind: 'check', note: data?.title ?? null,
-    });
+    await run('체크 기록', () =>
+      db().from('session_logs').insert({
+        objective_id: oid, area_id: data?.area_id ?? null, kind: 'check', note: data?.title ?? null,
+      }),
+    );
   }
   const oid = (form.get('objective_id') as string)?.trim();
   revalidatePath(oid ? `/okr/${oid}` : '/okr');
