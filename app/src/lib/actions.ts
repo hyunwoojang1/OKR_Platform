@@ -109,6 +109,83 @@ export async function updateKRProgress(form: FormData) {
 }
 
 /**
+ * 오늘 할일에서 지표를 한 번 해냈다고 찍는다 — "체크 = 기록 = 지표"의 실행부.
+ *
+ * 지금까지 체크는 할일 목록에만 남고 지표는 손으로 고쳐야 해서 진척률이 0%에 멈춰 있었다.
+ * 여기서 지표를 올리고 기록도 같이 남긴다. 무엇을 받을지는 지표의 input_mode가 정한다.
+ *   check  — 받는 것 없음, step(보통 1)만큼
+ *   number — 사용자가 적은 숫자만큼
+ *   text   — 1만큼 오르고, 적은 내용이 기록으로 남아 나중에 되짚을 수 있다
+ */
+export async function logKrProgress(form: FormData) {
+  const id = must(form.get('id'), '지표');
+  const rawAmount = ((form.get('amount') as string) ?? '').trim();
+  const note = ((form.get('note') as string) ?? '').trim().slice(0, 300);
+
+  const { data: kr, error } = await db()
+    .from('key_results')
+    .select('id,title,unit,current_value,objective_id,input_mode,step,cadence')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error(`지표 조회 실패: ${error.message}`);
+  if (!kr) throw new Error('지표를 찾을 수 없습니다');
+
+  let delta = Number(kr.step) || 1;
+  if (kr.input_mode === 'number') {
+    const { parsePace, isPaceKr } = await import('./types');
+    const parsed = isPaceKr(kr as { title: string }) ? parsePace(rawAmount) : Number(rawAmount);
+    if (parsed == null || !Number.isFinite(parsed) || parsed <= 0) {
+      throw new Error('얼마나 했는지 숫자로 적어주세요');
+    }
+    delta = parsed;
+  } else if (kr.input_mode === 'text' && !note) {
+    throw new Error('무엇을 했는지 적어주세요');
+  }
+
+  const next = Math.round((Number(kr.current_value) + delta) * 100) / 100;
+  await run('지표 반영', () => db().from('key_results').update({ current_value: next }).eq('id', id));
+
+  // 기록은 지표와 함께 남긴다 — 내용형에서 "언제 어디 지원했는지"를 되짚는 근거가 된다.
+  const body = note || `${kr.title} ${delta}${kr.unit ?? ''}`;
+  await db().from('session_logs').insert({
+    objective_id: kr.objective_id,
+    key_result_id: kr.id,
+    kind: 'check',
+    note: body,
+    metrics: kr.input_mode === 'text' ? null : [{ v: delta, u: kr.unit || '' }],
+  });
+
+  revalidatePath('/');
+  revalidatePath('/okr');
+  if (kr.objective_id) revalidatePath(`/okr/${kr.objective_id}`);
+}
+
+/** 방금 찍은 걸 되돌린다 — 지표에서 빼고 기록도 지운다. */
+export async function undoKrProgress(form: FormData) {
+  const logId = must(form.get('log_id'), '기록');
+  const { data: log, error } = await db()
+    .from('session_logs').select('id,key_result_id,metrics,objective_id').eq('id', logId).maybeSingle();
+  if (error) throw new Error(`기록 조회 실패: ${error.message}`);
+  if (!log?.key_result_id) throw new Error('되돌릴 기록이 없습니다');
+
+  const { data: kr } = await db()
+    .from('key_results').select('current_value,step,input_mode').eq('id', log.key_result_id).maybeSingle();
+  if (kr) {
+    const metrics = (log.metrics ?? []) as { v: number; u: string }[];
+    const fallback = Number(kr.step) || 1;
+    const back = kr.input_mode === 'text' ? fallback : (metrics[0]?.v ?? fallback);
+    const next = Math.max(0, Math.round((Number(kr.current_value) - back) * 100) / 100);
+    await run('지표 되돌리기', () =>
+      db().from('key_results').update({ current_value: next }).eq('id', log.key_result_id!),
+    );
+  }
+  await db().from('session_logs').delete().eq('id', logId);
+  revalidatePath('/');
+  revalidatePath('/okr');
+  if (log.objective_id) revalidatePath(`/okr/${log.objective_id}`);
+}
+
+/**
  * 주 1회 재는 숫자(몸무게 등)를 홈에서 바로 적는다.
  * 목표 화면 깊숙이 들어가야만 고칠 수 있어서 아무도 안 적던 값을, 재는 김에 남기게 하는 통로.
  * 지표를 갱신하면서 기록도 함께 남긴다 — 지표는 지금 값만 알고 지난주 값을 모르기 때문.

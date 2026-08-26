@@ -1,7 +1,8 @@
 import { toggleTask, toggleHabitLog, createTask, promoteTaskToRoutine } from '@/lib/actions';
 import { TaskEditor, HabitEditor } from './RowEditors';
 import { weekCountOf, streakOf } from '@/lib/queries';
-import type { Area, DailyTask, Habit, HabitLog, Initiative } from '@/lib/types';
+import type { Area, DailyTask, Habit, HabitLog, Initiative, KeyResult, SessionLog } from '@/lib/types';
+import KrRow from './KrRow';
 
 function ddayLabel(due: string, today: string): { text: string; urgent: boolean } {
   const d = Math.round(
@@ -80,9 +81,12 @@ type Props = {
   weekInitiatives: Initiative[];
   areas: Area[];
   repeated: Record<string, number>;
+  dailyKrs: KeyResult[];
+  krWeekDone: Record<string, number>;
+  krTodayLogs: Record<string, SessionLog[]>;
 };
 
-export default function TodayTasks({ date, tasks, habits, habitLogs, weekInitiatives, areas, repeated }: Props) {
+export default function TodayTasks({ date, tasks, habits, habitLogs, weekInitiatives, areas, repeated, dailyKrs, krWeekDone, krTodayLogs }: Props) {
   const areaOf = (id: string | null) => areas.find((a) => a.id === id);
   const habitLogOf = (id: string) => habitLogs.find((l) => l.habit_id === id && l.date === date && l.done);
 
@@ -95,8 +99,9 @@ export default function TodayTasks({ date, tasks, habits, habitLogs, weekInitiat
     .sort((a, b) => (a.due_date ?? '').localeCompare(b.due_date ?? ''));
   const otherTasks = tasks.filter((x) => !x.initiative_id && !x.due_date);
 
-  const doneCount = tasks.filter((x) => x.done).length + habits.filter((h) => habitLogOf(h.id)).length;
-  const totalCount = tasks.length + habits.length;
+  const krDoneCount = dailyKrs.filter((k) => (krTodayLogs[k.id] ?? []).length > 0).length;
+  const doneCount = tasks.filter((x) => x.done).length + habits.filter((h) => habitLogOf(h.id)).length + krDoneCount;
+  const totalCount = tasks.length + habits.length + dailyKrs.length;
 
   return (
     <section className="tile rise min-w-0 lg:col-span-4">
@@ -113,8 +118,17 @@ export default function TodayTasks({ date, tasks, habits, habitLogs, weekInitiat
         </Section>
       )}
 
-      {habits.length > 0 && (
+      {(dailyKrs.length > 0 || habits.length > 0) && (
         <Section label="루틴" note="이번 주">
+          {dailyKrs.map((kr) => (
+            <KrRow
+              key={kr.id}
+              kr={kr}
+              color={'var(--accent)'}
+              weekDone={krWeekDone[kr.id] ?? 0}
+              todayLogs={krTodayLogs[kr.id] ?? []}
+            />
+          ))}
           {habits.map((habit) => {
             const area = areaOf(habit.area_id);
             const color = area?.color ?? 'var(--ink-4)';

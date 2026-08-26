@@ -183,6 +183,9 @@ export default async function TodayPage() {
           weekInitiatives={t.weekInitiatives}
           areas={t.areas}
           repeated={t.repeated}
+          dailyKrs={t.dailyKrs}
+          krWeekDone={t.krWeekDone}
+          krTodayLogs={t.krTodayLogs}
         />
 
         {/* 중: 오늘 타임라인 (위젯 8) */}

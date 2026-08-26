@@ -1,5 +1,5 @@
 import { db } from './db';
-import type { Area, Objective, Milestone, KeyResult, Initiative, DailyTask, Habit, HabitLog, CalendarEvent } from './types';
+import type { Area, Objective, Milestone, KeyResult, Initiative, DailyTask, Habit, HabitLog, CalendarEvent, SessionLog } from './types';
 import { kstToday, kstMonday } from './types';
 
 const DEFAULT_AREAS: Array<Pick<Area, 'name' | 'color' | 'icon'> & { sort_order: number }> = [
@@ -72,6 +72,12 @@ export type TodayData = {
   areas: Area[];
   /** 최근에 반복해서 끝낸 일의 제목 → 완료 횟수. 루틴으로 옮기자고 제안할 근거. */
   repeated: Record<string, number>;
+  /** 오늘 할일에 띄울 지표 — 목표에서 적은 것이 곧 오늘 체크할 것이 된다. */
+  dailyKrs: KeyResult[];
+  /** 지표별 이번 주 실적(주간형) — 월요일 이후 기록 합계. 최종형은 current_value를 쓴다. */
+  krWeekDone: Record<string, number>;
+  /** 지표별 오늘 남긴 기록 — 되돌리기와 "오늘 얼마나 했나" 표시에 쓴다. */
+  krTodayLogs: Record<string, SessionLog[]>;
 };
 
 /** 이만큼 반복해 끝냈으면 "이건 한 번짜리가 아니라 루틴이다"라고 볼 만하다. */
@@ -83,13 +89,17 @@ export async function getToday(): Promise<TodayData> {
   const dayStartUtc = new Date(`${date}T00:00:00+09:00`).toISOString();
   const dayEndUtc = new Date(`${date}T23:59:59+09:00`).toISOString();
   const sinceUtc = new Date(Date.now() - ROUTINE_HINT_DAYS * 86400_000).toISOString();
-  const [areas, tasks, habitsData, events, inis, checks] = await Promise.all([
+  const [areas, tasks, habitsData, events, inis, checks, krQ, krLogQ] = await Promise.all([
     getAreas(),
     db().from('daily_tasks').select('*').eq('date', date).order('done').order('created_at'),
     getHabitsWithLogs(28),
     db().from('calendar_events').select('*').gte('starts_at', dayStartUtc).lte('starts_at', dayEndUtc).order('starts_at'),
     db().from('initiatives').select('*').eq('status', 'active').eq('week_of', kstMonday()).order('priority'),
     db().from('session_logs').select('note,logged_at').eq('kind', 'check').gte('logged_at', sinceUtc),
+    // 오늘 할일에 띄울 지표 (활성 목표의 것만)
+    db().from('key_results').select('*, objectives!inner(status)').eq('show_daily', true).eq('objectives.status', 'active'),
+    // 이번 주 기록 — 주간형 실적과 오늘 기록을 여기서 가른다
+    db().from('session_logs').select('*').not('key_result_id', 'is', null).gte('logged_at', `${kstMonday()}T00:00:00+09:00`),
   ]);
   if (tasks.error) throw new Error(`할일 조회 실패: ${tasks.error.message}`);
   if (events.error) throw new Error(`일정 조회 실패: ${events.error.message}`);
@@ -109,8 +119,29 @@ export async function getToday(): Promise<TodayData> {
     if (days.size >= ROUTINE_HINT_COUNT) repeated[title] = days.size;
   }
 
+  if (krQ.error) throw new Error(`지표 조회 실패: ${krQ.error.message}`);
+  if (krLogQ.error) throw new Error(`지표 기록 조회 실패: ${krLogQ.error.message}`);
+  const dailyKrs = (krQ.data ?? []) as KeyResult[];
+  const krLogs = (krLogQ.data ?? []) as SessionLog[];
+
+  const krWeekDone: Record<string, number> = {};
+  const krTodayLogs: Record<string, SessionLog[]> = {};
+  for (const kr of dailyKrs) {
+    const mine = krLogs.filter((l) => l.key_result_id === kr.id);
+    // 주간형이든 최종형이든 지표에 쌓인 current_value 하나만 믿는다.
+    // 주간형은 월요일 0시 크론이 0으로 되돌리므로 그 값이 곧 이번 주 실적이다.
+    // (기록에서 다시 세면 크론이 리셋한 값과 어긋나 화면과 진행률이 따로 논다)
+    krWeekDone[kr.id] = Number(kr.current_value);
+    krTodayLogs[kr.id] = mine
+      .filter((l) => new Date(new Date(l.logged_at).getTime() + 9 * 3600_000).toISOString().slice(0, 10) === date)
+      .sort((a, b) => a.logged_at.localeCompare(b.logged_at));
+  }
+
   return {
     date,
+    dailyKrs,
+    krWeekDone,
+    krTodayLogs,
     tasks: tasks.data as DailyTask[],
     habits: habitsData.habits,
     habitLogs: habitsData.logs,

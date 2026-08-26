@@ -79,6 +79,8 @@ export type Initiative = {
 };
 export type SessionLog = {
   id: string; area_id: string | null; objective_id: string | null; task_id: string | null;
+  /** 지표 체크가 남긴 기록이면 그 지표 — 내용형에서 "언제 어디" 목록을 뽑는 근거 */
+  key_result_id?: string | null;
   kind: 'log' | 'check' | 'review'; note: string | null;
   metrics: { v: number; u: string }[] | null; logged_at: string;
 };
