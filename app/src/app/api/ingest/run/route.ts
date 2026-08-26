@@ -10,6 +10,10 @@ export const maxDuration = 30;
 // 하는 일: ① 세션 로그 한 줄 ② 러닝 지표(KR) 자동 누적 ③ 오늘 할일 '러닝' 자동 체크 ④ 러닝 루틴 체크.
 // 인증은 크론과 같은 시크릿(?secret= 또는 Bearer) — 개인 도구라 별도 키를 늘리지 않는다.
 const RUN_WORDS = /러닝|달리기|조깅|run|뛰/i;
+const PACE_WORDS = /페이스|pace/i;
+const BEST_DIST_WORDS = /최장|최고 거리|가장 긴/i;
+/** 이보다 짧게 뛴 날의 페이스는 실력이 아니라 그날 컨디션이라 지표에 반영하지 않는다. */
+const MIN_PACE_KM = 3;
 const MAX_KM = 200;
 const MAX_MIN = 24 * 60;
 const AUTO_TAG = '(건강앱 자동)';
@@ -143,6 +147,32 @@ export async function POST(req: NextRequest) {
         const { error } = await db().from('key_results').update({ current_value: next }).eq('id', kr.id);
         if (!error) updated.push(`${kr.title} ${kr.current_value}→${next}${kr.unit}`);
       }
+    }
+
+    // ── ②-b 기록형 지표: 더하는 게 아니라 '최고 기록'으로 갈아끼운다 ──
+    // 페이스·최장 거리는 누적이 아니라 그날 성적이다. 러닝 목표 안에 있는 것만 건드린다
+    // ('최장 거리'라는 제목엔 러닝이라는 말이 없어서, 목표 이름으로 소속을 확인한다).
+    const runObjectiveIds = new Set(
+      (objRows as Pick<Objective, 'id' | 'title' | 'status'>[])
+        .filter((o) => RUN_WORDS.test(o.title)).map((o) => o.id),
+    );
+    for (const kr of krs) {
+      if (!runObjectiveIds.has(kr.objective_id)) continue;
+      const unit = (kr.unit ?? '').toLowerCase();
+      let next: number | null = null;
+
+      // 페이스(분/km) — 낮을수록 좋다. 최고 기록만 남기고, 짧게 뛴 날은 왜곡이 커서 제외한다.
+      if (PACE_WORDS.test(kr.title) && min && km >= MIN_PACE_KM) {
+        const pace = Math.round((min / km) * 100) / 100;
+        if (pace < Number(kr.current_value) || Number(kr.current_value) === 0) next = pace;
+      }
+      // 최장 거리 — 오늘 뛴 게 지금까지보다 길면 갈아끼운다.
+      if (BEST_DIST_WORDS.test(kr.title) && unit.includes('km') && km > Number(kr.current_value)) {
+        next = Math.round(km * 100) / 100;
+      }
+      if (next == null) continue;
+      const { error } = await db().from('key_results').update({ current_value: next }).eq('id', kr.id);
+      if (!error) updated.push(`${kr.title} ${kr.current_value}→${next}${kr.unit}`);
     }
 
     // 로그를 어느 목표 타임라인에 붙일지: 방금 갱신된 지표의 목표 우선

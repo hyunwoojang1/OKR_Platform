@@ -2,8 +2,9 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
 import { createLog, toggleInitiativeDone, togglePinObjective, updateKRProgress } from '@/lib/actions';
+import DeleteLogButton from '@/app/DeleteLogButton';
 import type { Area, Objective, KeyResult, Initiative, SessionLog } from '@/lib/types';
-import { kstToday, kstMonday, kstMonth, krPct } from '@/lib/types';
+import { kstToday, kstMonday, kstMonth, krPct, fmtKrValue, isPaceKr, krUnit } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -133,19 +134,20 @@ export default async function GoalDetailPage({
                             <input type="hidden" name="id" value={kr.id} />
                             <input
                               name="current_value"
-                              defaultValue={kr.current_value}
-                              inputMode="decimal"
-                              aria-label="현재값"
+                              defaultValue={fmtKrValue(kr, Number(kr.current_value))}
+                              inputMode={isPaceKr(kr) ? 'text' : 'decimal'}
+                              aria-label={isPaceKr(kr) ? '현재 페이스 (6:16 형식)' : '현재값'}
+                              title={isPaceKr(kr) ? '6:16 처럼 분:초로 적어주세요' : undefined}
                               className="mono w-12 !border-0 !bg-transparent !p-0 text-right !text-[13px]"
                               style={{ color: 'var(--ink)', borderBottom: '1px dashed var(--line-strong)' }}
                             />
-                            <span className="mono text-[13px]" style={{ color: 'var(--ink-4)' }}>{isDecrease ? ' → ' : '/'}{kr.target_value}{kr.unit}</span>
+                            <span className="mono text-[13px]" style={{ color: 'var(--ink-4)' }}>{isDecrease ? ' → ' : '/'}{fmtKrValue(kr, Number(kr.target_value))}{krUnit(kr)}</span>
                             <button type="submit" className="sr-only">저장</button>
                           </form>
                         ) : (
                           <span className="mono text-[13px]">
-                            {kr.current_value}
-                            <span style={{ color: 'var(--ink-4)' }}>{isDecrease ? ' → ' : '/'}{kr.target_value}{kr.unit}</span>
+                            {fmtKrValue(kr, Number(kr.current_value))}
+                            <span style={{ color: 'var(--ink-4)' }}>{isDecrease ? ' → ' : '/'}{fmtKrValue(kr, Number(kr.target_value))}{krUnit(kr)}</span>
                           </span>
                         )}
                       </div>
@@ -243,14 +245,15 @@ export default async function GoalDetailPage({
           )}
           <div className="flex flex-col">
             {logs.map((log, i) => (
-              <div key={log.id} className="flex gap-3.5">
+              <div key={log.id} className="group flex gap-3.5">
                 <div className="flex w-[10px] flex-col items-center pt-[5px]">
                   <div className="tl-dot" style={{ background: i === 0 ? 'var(--accent)' : '#C9C4B8' }} />
                   {i < logs.length - 1 && <div className="tl-line" />}
                 </div>
                 <div className="flex flex-1 flex-col gap-1 pb-5">
-                  <div className="mono text-[11px]" style={{ color: 'var(--ink-3)' }}>
-                    {fmtTs(log.logged_at)}{log.kind === 'check' ? ' · 완료' : log.kind === 'review' ? ' · 회고' : ''}
+                  <div className="mono flex items-center gap-2 text-[11px]" style={{ color: 'var(--ink-3)' }}>
+                    <span>{fmtTs(log.logged_at)}{log.kind === 'check' ? ' · 완료' : log.kind === 'review' ? ' · 회고' : ''}</span>
+                    <DeleteLogButton id={log.id} redirect={`/okr/${id}`} />
                   </div>
                   <div className="text-[15px]">{log.note ?? '(내용 없음)'}</div>
                   {log.metrics && log.metrics.length > 0 && (

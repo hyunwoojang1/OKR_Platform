@@ -3,9 +3,11 @@ import { db } from '@/lib/db';
 import { getToday, getOkrTree, streakOf } from '@/lib/queries';
 import { togglePinEvent, togglePinObjective, sendJobCommand } from '@/lib/actions';
 import type { CalendarEvent, JobPosting, SessionLog } from '@/lib/types';
-import { kstToday, krPct } from '@/lib/types';
+import { kstToday, krPct, fmtKrValue, krUnit } from '@/lib/types';
 import AddTaskSheet from './AddTaskSheet';
 import TodayTasks from './TodayTasks';
+import DeleteLogButton from './DeleteLogButton';
+import WeeklyMetricCard, { isWeighInDay, pickWeeklyMetrics } from './WeeklyMetricCard';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,20 +33,27 @@ export default async function TodayPage() {
   const today = kstToday();
   const dayStart = new Date(`${today}T00:00:00+09:00`).toISOString();
   const yStart = new Date(new Date(dayStart).getTime() - 86400_000).toISOString();
+  // 주말 기록 카드가 '지난번 값'을 찾아볼 범위 (오늘 기준으로 계산 — 렌더 중 현재시각 직접 호출 금지)
+  const metricSince = new Date(new Date(dayStart).getTime() - 120 * 86400_000).toISOString();
 
-  const [t, tree, jobsQ, pinQ, ylogQ] = await Promise.all([
+  const [t, tree, jobsQ, pinQ, ylogQ, mlogQ] = await Promise.all([
     getToday(),
     getOkrTree(),
     db().from('job_postings').select('*').eq('deadline', today).eq('stage', '지원예정'),
     db().from('calendar_events').select('*').eq('pinned', true).gte('starts_at', dayStart).order('starts_at').limit(10),
     db().from('session_logs').select('*').gte('logged_at', yStart).lt('logged_at', dayStart).order('logged_at'),
+    // 주말 기록 카드용: 지난번에 얼마라고 적었는지 (지표는 지금 값만 알고 이력을 모른다)
+    db().from('session_logs').select('*').eq('kind', 'log').not('metrics', 'is', null)
+      .gte('logged_at', metricSince)
+      .order('logged_at', { ascending: false }).limit(60),
   ]);
-  for (const q of [jobsQ, pinQ, ylogQ]) {
+  for (const q of [jobsQ, pinQ, ylogQ, mlogQ]) {
     if (q.error) throw new Error(`홈 조회 실패: ${q.error.message}`);
   }
   const dueJobs = jobsQ.data as JobPosting[];
   const pinnedEvents = pinQ.data as CalendarEvent[];
   const yLogs = ylogQ.data as SessionLog[];
+  const recentLogs = mlogQ.data as SessionLog[];
 
   const todayDow = new Date(new Date(`${today}T00:00:00+09:00`).getTime() + 9 * 3600_000).getUTCDay();
   const openTasks = t.tasks.filter((x) => !x.done);
@@ -65,6 +74,12 @@ export default async function TodayPage() {
   const carried = openTasks.filter((x) => x.carried_over > 0).length;
   const maxStreak = Math.max(0, ...t.habits.map((h) => streakOf(h.id, t.habitLogs)));
   const activeObjectives = tree.objectives.filter((o) => o.status === 'active');
+
+  // 주말 기록 카드 재료 — 활성 목표의 지표 중 '재서 적는' 것만 (지난 기록은 로그에서 찾는다)
+  const weeklyMetricKrs = isWeighInDay(today)
+    ? pickWeeklyMetrics(activeKRs)
+    : [];
+  const weightLogs = weeklyMetricKrs.length > 0 ? recentLogs : [];
 
   // ── D-day 보드: 활성 목표 마감(자동) + 핀 일정 ──
   const todayT = new Date(`${today}T00:00:00+09:00`).getTime();
@@ -153,6 +168,9 @@ export default async function TodayPage() {
           </p>
         </div>
       </div>
+
+      {/* 주말에만: 주 1회 재는 숫자를 홈에서 바로 적는다 (목표 화면까지 안 들어가도 되게) */}
+      {isWeighInDay(today) && <WeeklyMetricCard krs={weeklyMetricKrs} logs={weightLogs} />}
 
       {/* 1행: 할일 · 오늘 타임라인 · D-day+어제 — 균등 분할 (QA: 카드 폭 통일, 좁은 창은 768px부터 2열) */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
@@ -295,11 +313,12 @@ export default async function TodayPage() {
                 <p className="text-[13.5px]">어제 <span className="font-medium">{yParts.join(' · ')}</span></p>
                 <ul className="space-y-1.5">
                   {yLogs.slice(0, 5).map((l) => (
-                    <li key={l.id} className="flex gap-2">
+                    <li key={l.id} className="group flex items-start gap-2">
                       <span className="mono shrink-0 pt-0.5 text-[10px]" style={{ color: 'var(--ink-4)' }}>{fmtTime(l.logged_at)}</span>
                       <span className="min-w-0 flex-1 truncate text-[12.5px]" style={{ color: 'var(--ink-2)' }}>
                         {l.note ?? '(기록)'}{l.kind === 'check' ? ' ✓' : ''}
                       </span>
+                      <DeleteLogButton id={l.id} />
                     </li>
                   ))}
                 </ul>
@@ -343,7 +362,7 @@ export default async function TodayPage() {
                         <li key={kr.id} className="flex items-baseline gap-1.5 text-[11.5px]" style={{ color: 'var(--ink-2)' }}>
                           <span className="min-w-0 flex-1 truncate">{kr.title}</span>
                           <span className="mono" style={{ color: 'var(--ink-4)' }}>
-                            {Number(kr.current_value)}/{Number(kr.target_value)}{kr.unit}
+                            {fmtKrValue(kr, Number(kr.current_value))}/{fmtKrValue(kr, Number(kr.target_value))}{krUnit(kr)}
                             {kr.source !== 'manual' && ' ⚡'}
                           </span>
                         </li>

@@ -1,11 +1,21 @@
 import NotificationToggle from './NotificationToggle';
+import AreaManager from './AreaManager';
+import { db } from '@/lib/db';
+import type { Area } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  // 보관된 것도 보여준다 — 되살리려면 목록에 있어야 하니까.
+  const { data, error } = await db().from('areas').select('*').order('sort_order').order('name');
+  if (error) throw new Error(`영역 조회 실패: ${error.message}`);
+  const areas = (data ?? []) as Area[];
+
   return (
     <main className="mx-auto max-w-2xl space-y-4">
       <h1 className="t-large">설정</h1>
+
+      <AreaManager areas={areas} />
 
       <section className="tile">
         <h2 className="tile-title">알림</h2>
