@@ -79,6 +79,7 @@ export default async function GoalDetailPage({
       <div className="flex-1 space-y-6">
         <div className="flex items-center justify-between text-sm" style={{ color: 'var(--ink-2)' }}>
           <Link href="/okr">← 목표</Link>
+          <Link href={`/okr/${id}/edit`} style={{ color: 'var(--ink-3)' }}>편집</Link>
         </div>
 
         <header className="space-y-3">

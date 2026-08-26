@@ -5,36 +5,13 @@ import { useRouter } from 'next/navigation';
 import { createGoalPlan, normalizeKrDrafts, suggestGoalPlan } from '@/lib/actions';
 import type { Area } from '@/lib/types';
 import { kstToday } from '@/lib/types';
+import KrCard from '../KrCard';
+import { type KRDraft, MAX_KRS, krSentence, krUnit, parseAmount } from '../krDraft';
 
-// target/start 는 사용자가 친 원문 그대로("30km", "75kg") — 숫자·단위 분리는 뒤에서 한다.
-// unit 은 추천 칩이 넣어주는 힌트일 뿐, 입력 UI에는 단위 칸이 없다 (QA: 단위 칩 제거).
-type KRDraft = { title: string; target: string; unit: string; start?: string; cadence?: 'total' | 'weekly' };
-
-// "30km" → { num: 30, unit: 'km' }. 숫자 없으면 num 0.
-function parseAmount(raw: string | undefined): { num: number; unit: string } {
-  const s = (raw ?? '').trim();
-  const num = Number((s.match(/\d+(?:[.,]\d+)?/)?.[0] ?? '').replace(',', ''));
-  const unit = s.replace(/[\d.,\s]/g, '').slice(0, 6);
-  return { num: Number.isFinite(num) && num > 0 ? num : 0, unit };
-}
-function krUnit(k: KRDraft): string {
-  return parseAmount(k.target).unit || parseAmount(k.start).unit || k.unit || '';
-}
-
-// 지표를 사람 문장으로 — 검토·확인 문구가 전부 이걸 쓴다.
-function krSentence(k: KRDraft): string {
-  const t = parseAmount(k.target);
-  const s = parseAmount(k.start);
-  const unit = krUnit(k);
-  if (k.cadence === 'weekly') return `매주 ${k.title.trim()} ${t.num}${unit}`;
-  if (s.num > 0 && s.num !== t.num) return `${k.title.trim()} ${s.num}${unit} → ${t.num}${unit}`;
-  return `${k.title.trim()} ${t.num}${unit}`;
-}
 type UpcomingEvent = { title: string; date: string };
 
 const WEEK_OPTIONS = [4, 6, 8];
 const MAX_WEEKS = 12;
-const MAX_KRS = 5;
 
 // 영역 이름 키워드 → 추천 지표. 탭 한 번으로 행이 완성된다.
 const KR_SUGGESTIONS: { match: RegExp; items: KRDraft[] }[] = [
@@ -619,68 +596,13 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
             </div>
             <div className="flex flex-col gap-2.5">
               {krs.map((k, i) => (
-                <div key={i} className="space-y-2.5 rounded-2xl border p-3.5" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={k.title}
-                      onChange={(e) => updateKr(i, { title: e.target.value })}
-                      placeholder="무엇을 세나요? (예: 러닝 거리)"
-                      className="min-w-0 flex-1 !border-0 !bg-transparent !p-0 !text-[15px]"
-                    />
-                    {krs.length > 1 && (
-                      <button
-                        onClick={() => setKrs((prev) => prev.filter((_, j) => j !== i))}
-                        aria-label="지표 삭제"
-                        className="shrink-0 text-sm"
-                        style={{ color: 'var(--ink-4)' }}
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                  <div className="divider" />
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-16 shrink-0 text-[13px]" style={{ color: 'var(--ink-3)' }}>{k.cadence === 'weekly' ? '매주' : '목표'}</span>
-                    <input
-                      value={k.target}
-                      onChange={(e) => updateKr(i, { target: e.target.value })}
-                      placeholder={k.cadence === 'weekly' ? '예: 3회 · 30km' : '예: 30km · 12회 · 75점'}
-                      className="min-w-0 flex-1 !py-1.5"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    {k.cadence !== 'weekly' && (
-                      <>
-                        <span className="w-16 shrink-0 text-[13px]" style={{ color: 'var(--ink-3)' }}>시작<span style={{ color: 'var(--ink-4)' }}>(선택)</span></span>
-                        <input
-                          value={k.start ?? ''}
-                          onChange={(e) => updateKr(i, { start: e.target.value })}
-                          placeholder="지금 수준 — 예: 75kg · 비워도 돼요"
-                          className="min-w-0 flex-1 !py-1.5"
-                        />
-                      </>
-                    )}
-                    <button
-                      onClick={() => updateKr(i, { cadence: k.cadence === 'weekly' ? 'total' : 'weekly', ...(k.cadence !== 'weekly' ? { start: '' } : {}) })}
-                      className="chip pressable !px-2.5 !py-1 !text-[12px]"
-                      style={
-                        k.cadence === 'weekly'
-                          ? { border: '1.5px solid var(--accent)', background: 'var(--accent-bg-soft)', color: 'var(--accent-deep)', fontWeight: 500 }
-                          : { color: 'var(--ink-3)' }
-                      }
-                    >
-                      {k.cadence === 'weekly' ? '✓ 매주 반복' : '매주 반복'}
-                    </button>
-                    {k.cadence !== 'weekly' && parseAmount(k.start).num > parseAmount(k.target).num && parseAmount(k.target).num > 0 && (
-                      <span className="text-[12px]" style={{ color: 'var(--ink-3)' }}>줄이는 목표네요</span>
-                    )}
-                  </div>
-                  {k.title.trim() && parseAmount(k.target).num > 0 && (
-                    <div className="text-[13px]" style={{ color: 'var(--accent-deep)' }}>
-                      ✓ “{krSentence(k)}” — 이걸로 진행률을 재요.
-                    </div>
-                  )}
-                </div>
+                <KrCard
+                  key={i}
+                  kr={k}
+                  removable={krs.length > 1}
+                  onChange={(patch) => updateKr(i, patch)}
+                  onRemove={() => setKrs((prev) => prev.filter((_, j) => j !== i))}
+                />
               ))}
               {krs.length < MAX_KRS && (
                 <button

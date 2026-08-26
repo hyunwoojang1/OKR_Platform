@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { db } from './db';
-import { kstToday, kstQuarter } from './types';
+import { kstToday, kstQuarter, kstMonday } from './types';
 
 // 모든 액션 공통: 입력을 서버에서 검증하고(빈 문자열 거부), 실패는 명시적으로 던진다.
 function must(v: FormDataEntryValue | null, name: string): string {
@@ -152,9 +152,10 @@ export async function toggleTask(form: FormData) {
   await run('할일 체크', () =>
     db().from('daily_tasks').update({ done, done_at: done ? new Date().toISOString() : null }).eq('id', id),
   );
+  const { data } = await db()
+    .from('daily_tasks').select('title,area_id,initiative_id').eq('id', id).maybeSingle();
   if (done) {
     // 체크 = 자동 로그 (만능 원자 원칙 — 실패해도 체크는 유지)
-    const { data } = await db().from('daily_tasks').select('title,area_id,initiative_id').eq('id', id).maybeSingle();
     let objectiveId: string | null = null;
     if (data?.initiative_id) {
       const { data: ini } = await db().from('initiatives').select('objective_id').eq('id', data.initiative_id).maybeSingle();
@@ -163,15 +164,55 @@ export async function toggleTask(form: FormData) {
     await db().from('session_logs').insert({
       task_id: id, objective_id: objectiveId, area_id: data?.area_id ?? null, kind: 'check', note: data?.title ?? null,
     });
+    // 목표에서 내려온 할일이면 그 주간 계획도 같이 완료 (지금까지 따로 놀던 빈틈)
+    if (data?.initiative_id) {
+      await db().from('initiatives').update({ status: 'done' }).eq('id', data.initiative_id);
+    }
+  } else {
+    // 되돌리기 = 흔적도 되돌린다. 안 지우면 체크·해제를 반복할 때마다 타임라인에 유령 기록이 쌓인다.
+    await db().from('session_logs').delete().eq('task_id', id).eq('kind', 'check');
+    if (data?.initiative_id) {
+      await db().from('initiatives').update({ status: 'active' }).eq('id', data.initiative_id);
+    }
   }
   revalidatePath('/');
   revalidatePath('/calendar');
+  revalidatePath('/okr');
 }
 
-// ── 습관 ──
+/** 할일 → 루틴 이사. '러닝'처럼 매번 반복하는 일이 마감형 할일로 잡혀 이월이 쌓이는 걸 푸는 통로. */
+export async function promoteTaskToRoutine(form: FormData) {
+  const id = must(form.get('id'), '할일');
+  const perWeek = Math.min(7, Math.max(1, Number(form.get('target_per_week') ?? 7) || 7));
+  const { data: task, error } = await db()
+    .from('daily_tasks').select('title,area_id,done').eq('id', id).maybeSingle();
+  if (error) throw new Error(`할일 조회 실패: ${error.message}`);
+  if (!task) throw new Error('할일을 찾을 수 없습니다');
+
+  await run('루틴 생성', () =>
+    db().from('habits').insert({
+      title: task.title,
+      area_id: task.area_id,
+      cadence: perWeek >= 7 ? 'daily' : 'weekly',
+      target_per_week: perWeek,
+    }),
+  );
+  // 오늘 이미 체크된 상태였다면 루틴에서도 오늘 체크로 이어받는다 (한 일이 사라지지 않게)
+  if (task.done) {
+    const { data: habit } = await db()
+      .from('habits').select('id').eq('title', task.title).order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (habit) {
+      await db().from('habit_logs').upsert({ habit_id: habit.id, date: kstToday(), done: true }, { onConflict: 'habit_id,date' });
+    }
+  }
+  await run('할일 정리', () => db().from('daily_tasks').delete().eq('id', id));
+  revalidatePath('/');
+}
+
+// ── 루틴 (저장은 habits 테이블. 화면에서는 전부 "루틴"으로 부른다) ──
 export async function createHabit(form: FormData) {
   const cadence = form.get('cadence') === 'weekly' ? 'weekly' : 'daily';
-  await run('습관 생성', () =>
+  await run('루틴 생성', () =>
     db().from('habits').insert({
       title: must(form.get('title'), '제목'),
       area_id: (form.get('area_id') as string)?.trim() || null,
@@ -184,15 +225,15 @@ export async function createHabit(form: FormData) {
 }
 
 export async function toggleHabitLog(form: FormData) {
-  const habitId = must(form.get('habit_id'), '습관');
+  const habitId = must(form.get('habit_id'), '루틴');
   const date = (form.get('date') as string)?.trim() || kstToday();
   const done = form.get('done') === 'true';
   if (done) {
-    await run('습관 체크', () =>
+    await run('루틴 체크', () =>
       db().from('habit_logs').upsert({ habit_id: habitId, date, done: true }, { onConflict: 'habit_id,date' }),
     );
   } else {
-    await run('습관 해제', () => db().from('habit_logs').delete().eq('habit_id', habitId).eq('date', date));
+    await run('루틴 해제', () => db().from('habit_logs').delete().eq('habit_id', habitId).eq('date', date));
   }
   revalidatePath('/habits');
   revalidatePath('/');
@@ -215,17 +256,39 @@ export async function createEvent(form: FormData) {
   revalidatePath('/');
 }
 
+/**
+ * 일정 삭제 — 구글에서 내려온 일정도 지운다.
+ * 예전에는 source='app'으로 막혀 있어서, 구글 일정에 ✕를 눌러도 0건이 지워지고 조용히 성공했다.
+ * 구글 쪽을 먼저 지우는 이유: 로컬만 지우면 다음 동기화 때 그대로 되살아난다.
+ */
 export async function deleteEvent(form: FormData) {
-  const id = must(form.get('id'), '일정');
+  const ids = form.getAll('id').map((v) => String(v).trim()).filter(Boolean);
+  if (ids.length === 0) throw new Error('지울 일정을 고르지 않았습니다');
+
   const { data, error } = await db()
-    .from('calendar_events').select('google_event_id').eq('id', id).eq('source', 'app').maybeSingle();
+    .from('calendar_events').select('id,google_event_id').in('id', ids);
   if (error) throw new Error(`일정 조회 실패: ${error.message}`);
-  if (data?.google_event_id) {
-    const { deleteGoogleEvent } = await import('./google-calendar');
-    await deleteGoogleEvent(data.google_event_id);
+  const rows = (data ?? []) as { id: string; google_event_id: string | null }[];
+  if (rows.length === 0) throw new Error('일정을 찾을 수 없습니다');
+
+  const { deleteGoogleEvent } = await import('./google-calendar');
+  const failed: string[] = [];
+  for (const row of rows) {
+    if (!row.google_event_id) continue;
+    // 구글 삭제가 실패한 건은 로컬도 남긴다 — 한쪽만 사라져 두 달력이 어긋나는 게 더 나쁘다.
+    try {
+      await deleteGoogleEvent(row.google_event_id);
+    } catch {
+      failed.push(row.id);
+    }
   }
-  await run('일정 삭제', () => db().from('calendar_events').delete().eq('id', id).eq('source', 'app'));
+  const deletable = rows.filter((r) => !failed.includes(r.id)).map((r) => r.id);
+  if (deletable.length > 0) {
+    await run('일정 삭제', () => db().from('calendar_events').delete().in('id', deletable));
+  }
   revalidatePath('/calendar');
+  revalidatePath('/');
+  if (failed.length > 0) throw new Error(`${failed.length}건은 구글에서 지우지 못해 그대로 두었습니다`);
 }
 
 // D-day 보드 핀: 달력 일정에 📌 → 홈 카운트다운 등재/해제
@@ -545,6 +608,96 @@ const JOB_ACTION_STAGE: Record<string, string> = {
   submitted: '제출완료',
   rejected: '미지원',
 };
+
+// ── 목표 편집 (한 페이지에서 제목·기한·지표·주간계획을 한 번에 저장) ──
+// 원칙: 지표는 id로 맞춰 갱신하고, 화면에서 사라진 지표만 삭제한다.
+// 진행값(current_value)은 건드리지 않는다 — 그건 매일 쌓는 실적이라 편집의 몫이 아니다.
+export async function updateGoalPlan(payload: {
+  id: string;
+  areaId: string;
+  title: string;
+  dueDate: string | null;
+  krs: { id?: string; title: string; target: number; unit: string; start?: number; cadence?: 'total' | 'weekly' }[];
+  weeks: { weekOf: string; title: string }[];
+}) {
+  const id = must(payload.id, '목표');
+  if (!payload.title.trim()) throw new Error('목표 제목이 비어 있습니다');
+
+  await run('목표 수정', () =>
+    db().from('objectives').update({
+      area_id: payload.areaId,
+      title: payload.title.trim().slice(0, 200),
+      due_date: payload.dueDate,
+    }).eq('id', id),
+  );
+
+  const { data: existingRows, error: exErr } = await db().from('key_results').select('id,current_value').eq('objective_id', id);
+  if (exErr) throw new Error(`지표 조회 실패: ${exErr.message}`);
+  const existing = new Map((existingRows ?? []).map((r) => [r.id as string, Number(r.current_value)]));
+
+  const valid = payload.krs.filter((k) => k.title.trim() && Number.isFinite(k.target) && k.target > 0);
+  const keptIds = new Set<string>();
+
+  for (const k of valid) {
+    const cadence = k.cadence === 'weekly' ? 'weekly' : 'total';
+    const start = cadence === 'total' && Number.isFinite(k.start) && (k.start as number) >= 0 ? (k.start as number) : 0;
+    const base = {
+      title: k.title.trim().slice(0, 200),
+      target_value: k.target,
+      unit: k.unit.trim().slice(0, 20),
+      start_value: start,
+      cadence,
+    };
+    if (k.id && existing.has(k.id)) {
+      keptIds.add(k.id);
+      await run('지표 수정', () => db().from('key_results').update(base).eq('id', k.id!));
+    } else {
+      await run('지표 추가', () =>
+        db().from('key_results').insert({ ...base, objective_id: id, source: 'manual' as const, current_value: start }),
+      );
+    }
+  }
+
+  const removed = [...existing.keys()].filter((eid) => !keptIds.has(eid));
+  if (removed.length > 0) {
+    // 지표만 지운다. session_logs(러닝 기록 등)는 활동 기록이라 그대로 남긴다.
+    await run('지표 삭제', () => db().from('key_results').delete().in('id', removed));
+  }
+
+  // 주간 계획: 이번 주 이후만 갈아끼운다(지난 주 기록은 보존).
+  const monday = kstMonday();
+  const { error: delErr } = await db().from('initiatives').delete().eq('objective_id', id).gte('week_of', monday);
+  if (delErr) throw new Error(`주간 계획 정리 실패: ${delErr.message}`);
+  const iniRows = payload.weeks
+    .filter((w) => w.title.trim() && w.weekOf >= monday)
+    .map((w) => ({
+      area_id: payload.areaId,
+      objective_id: id,
+      milestone_id: null,
+      title: w.title.trim().slice(0, 300),
+      week_of: w.weekOf,
+      priority: 2,
+    }));
+  if (iniRows.length > 0) {
+    const { error: iniErr } = await db().from('initiatives').insert(iniRows);
+    if (iniErr) throw new Error(`주간 계획 저장 실패: ${iniErr.message}`);
+  }
+
+  revalidatePath('/okr');
+  revalidatePath(`/okr/${id}`);
+  revalidatePath('/');
+  return id;
+}
+
+// 목표 매듭짓기 — 완료/그만두기. 기록은 남고 목록에서만 내려간다.
+export async function setGoalStatus(payload: { id: string; status: 'active' | 'done' | 'dropped' }) {
+  const id = must(payload.id, '목표');
+  if (!['active', 'done', 'dropped'].includes(payload.status)) throw new Error('허용되지 않은 상태');
+  await run('목표 상태 변경', () => db().from('objectives').update({ status: payload.status }).eq('id', id));
+  revalidatePath('/okr');
+  revalidatePath(`/okr/${id}`);
+  revalidatePath('/');
+}
 
 export async function sendJobCommand(form: FormData) {
   const action = must(form.get('action'), '동작');

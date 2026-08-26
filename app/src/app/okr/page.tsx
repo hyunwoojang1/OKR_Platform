@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic';
 
 // v4 목표 목록: 목표당 카드 하나 — 영역 라벨 + 제목 + 사람 문장 + 진행 링 + 다음 마감 한 줄.
 // OKR 용어는 UI에서 퇴출 (REDESIGN_PLAN).
-export default async function OkrPage() {
+export default async function OkrPage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
+  const editing = (await searchParams).edit === '1';
   const [areasQ, objQ, krQ, iniQ] = await Promise.all([
     db().from('areas').select('*').eq('archived', false),
     db().from('objectives').select('*').eq('status', 'active').order('created_at'),
@@ -28,15 +29,24 @@ export default async function OkrPage() {
     <main className="mx-auto max-w-5xl space-y-5">
       <header className="flex items-center justify-between">
         <h1 className="t-large">목표</h1>
-        <Link
-          href="/okr/new"
-          aria-label="새 목표"
-          className="pressable flex h-9 w-9 items-center justify-center rounded-full text-xl font-light text-white"
-          style={{ background: 'var(--ink)' }}
-        >
-          +
-        </Link>
+        <div className="flex items-center gap-3">
+          {/* 편집 모드: 켜면 카드를 눌렀을 때 편집 화면으로 간다 */}
+          <Link href={editing ? '/okr' : '/okr?edit=1'} className="text-[13px]" style={{ color: editing ? 'var(--accent-deep)' : 'var(--ink-3)' }}>
+            {editing ? '완료' : '편집'}
+          </Link>
+          <Link
+            href="/okr/new"
+            aria-label="새 목표"
+            className="pressable flex h-9 w-9 items-center justify-center rounded-full text-xl font-light text-white"
+            style={{ background: 'var(--ink)' }}
+          >
+            +
+          </Link>
+        </div>
       </header>
+      {editing && (
+        <p className="text-[13px]" style={{ color: 'var(--accent-deep)' }}>고칠 목표를 누르세요.</p>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
       {objectives.map((obj) => {
@@ -56,8 +66,8 @@ export default async function OkrPage() {
           ? Math.ceil((new Date(`${obj.due_date}T00:00:00+09:00`).getTime() - new Date(`${today}T00:00:00+09:00`).getTime()) / 86400_000)
           : null;
         return (
-          <Link key={obj.id} href={`/okr/${obj.id}`} className="pressable block">
-            <section className="tile space-y-4 !p-[18px]">
+          <Link key={obj.id} href={editing ? `/okr/${obj.id}/edit` : `/okr/${obj.id}`} className="pressable block">
+            <section className="tile space-y-4 !p-[18px]" style={editing ? { borderColor: 'var(--accent)' } : undefined}>
               <div className="flex items-start gap-4">
                 <div className="flex flex-1 flex-col gap-1.5">
                   <div className="mono text-[11px] tracking-wide" style={{ color: 'var(--accent)' }}>
