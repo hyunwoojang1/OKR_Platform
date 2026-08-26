@@ -159,7 +159,12 @@ export default function CalendarView({
 
   return (
     <main className="w-full">
-      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_380px]">
+      {/*
+        모바일 한 칸짜리 그리드도 minmax(0,1fr)로 못박는다. 기본 auto 트랙은 최소 폭이
+        min-content라, 긴 일정 제목 하나가 칸을 464px로 벌려 화면 밖으로 밀어냈다
+        (iPhone 14 Pro Max 34px, SE 90px 넘침). 안쪽 요소는 전부 정상이었고 트랙이 범인.
+      */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-[minmax(0,1fr)_380px]">
         {/* ── 왼쪽: 달력 + 선택일 ── */}
         <div className="space-y-5">
           <header className="flex items-center justify-between">
