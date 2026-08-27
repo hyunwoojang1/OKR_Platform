@@ -7,7 +7,7 @@ import { setGoalStatus, updateGoalPlan } from '@/lib/actions';
 import type { Area, Initiative, KeyResult, Objective } from '@/lib/types';
 import { kstToday } from '@/lib/types';
 import KrCard from '../../KrCard';
-import { type KRDraft, MAX_KRS, isKrFilled, krSentence, parseAmount, toKrPayload, weeklyTargets } from '../../krDraft';
+import { type KRDraft, MAX_KRS, isKrFilled, krMissingReason, krSentence, parseAmount, toKrPayload, weeklyTargets } from '../../krDraft';
 
 const MAX_WEEKS = 12;
 
@@ -85,6 +85,13 @@ export default function EditGoalForm({
 
   function save() {
     setError(null);
+    /*
+      이름은 적었는데 숫자를 하나도 안 적은 줄은 저장에서 조용히 빠진다.
+      예전엔 그 사실을 아무도 말해주지 않아서, 저장을 눌러도 지표가 안 생기고
+      이유도 안 보였다. 버리기 전에 왜인지 먼저 말한다.
+    */
+    const missing = krs.map(krMissingReason).filter(Boolean) as string[];
+    if (missing.length > 0) { setError(missing.join(' · ')); return; }
     startTransition(async () => {
       try {
         await updateGoalPlan({

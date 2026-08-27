@@ -61,12 +61,21 @@ export default async function GoalDetailPage({
     countByDay.set(d, (countByDay.get(d) ?? 0) + 1);
   }
   const daysLogged = new Set(countByDay.keys());
-  const heatColor = (n: number, future: boolean) => {
-    if (future) return { background: '#F5F2EA', border: '1px solid #EDEAE2' };
-    if (n === 0) return { background: '#EDEAE2' };
-    if (n === 1) return { background: 'oklch(0.88 0.055 150)' };
-    if (n === 2) return { background: 'oklch(0.78 0.09 150)' };
-    return { background: 'oklch(0.62 0.13 150)' };
+  // 달의 1일이 무슨 요일인가 — 달력 격자의 앞을 이만큼 비워야 요일이 줄을 맞춘다
+  const firstDow = new Date(`${month}-01T00:00:00+09:00`).getUTCDay();
+  /*
+    하루 칸의 색. 달력 탭과 같은 언어를 쓴다 — 한 날은 채운 초록 원, 오늘은 검은 원,
+    앞으로 올 날은 흐리게. 예전엔 11칸짜리 격자에 네모를 죽 늘어놓아서
+    "달력처럼 안 나오고 그냥 네모난 게 연속으로 나온다"는 말을 들었다.
+    많이 한 날일수록 진해지는 것은 그대로 둔다 — 한눈에 밀도가 보이는 게 이 칸의 쓸모다.
+  */
+  const dayStyle = (n: number, day: string): React.CSSProperties => {
+    if (day === today) return { background: 'var(--ink)', color: '#fff', fontWeight: 500 };
+    if (n >= 3) return { background: 'oklch(0.62 0.13 150)', color: '#fff', fontWeight: 500 };
+    if (n === 2) return { background: 'oklch(0.74 0.10 150)', color: '#fff' };
+    if (n === 1) return { background: 'oklch(0.88 0.055 150)', color: 'var(--accent-deep)' };
+    if (day > today) return { color: 'var(--ink-4)' };
+    return { color: 'var(--ink-3)' };
   };
 
   const fmtTs = (iso: string) => {
@@ -226,10 +235,25 @@ export default async function GoalDetailPage({
             <div className="text-[16px] leading-relaxed" style={{ textWrap: 'pretty' }}>
               {Number(month.slice(5))}월에 <span className="font-medium">{daysLogged.size}일</span> 기록했어요.
             </div>
-            <div className="grid gap-1" style={{ gridTemplateColumns: 'repeat(11, 1fr)' }}>
+            <div className="grid gap-y-1 text-center" style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}>
+              {['일', '월', '화', '수', '목', '금', '토'].map((d, i) => (
+                <div key={d} className="mono pb-1 text-[11px]" style={{ color: i === 0 ? 'var(--urgent)' : 'var(--ink-3)' }}>{d}</div>
+              ))}
+              {Array.from({ length: firstDow }, (_, i) => <div key={`sp${i}`} />)}
               {Array.from({ length: daysInMonth }, (_, i) => {
                 const day = `${month}-${String(i + 1).padStart(2, '0')}`;
-                return <div key={day} className="heat" style={heatColor(countByDay.get(day) ?? 0, day > today)} />;
+                const n = countByDay.get(day) ?? 0;
+                return (
+                  <div key={day} className="flex justify-center py-0.5">
+                    <span
+                      className="mono flex h-7 w-7 items-center justify-center rounded-full text-[12.5px]"
+                      style={dayStyle(n, day)}
+                      title={n > 0 ? `${Number(day.slice(8))}일 · 기록 ${n}건` : undefined}
+                    >
+                      {i + 1}
+                    </span>
+                  </div>
+                );
               })}
             </div>
           </div>

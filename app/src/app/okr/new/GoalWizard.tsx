@@ -6,7 +6,7 @@ import { createGoalPlan, normalizeKrDrafts, suggestGoalPlan } from '@/lib/action
 import type { Area } from '@/lib/types';
 import { kstToday } from '@/lib/types';
 import KrCard from '../KrCard';
-import { type KRDraft, MAX_KRS, krSentence, krUnit, parseAmount, isKrFilled, krMode, toKrPayload } from '../krDraft';
+import { type KRDraft, MAX_KRS, krSentence, krUnit, parseAmount, isKrFilled, krMissingReason, krMode, toKrPayload } from '../krDraft';
 
 type UpcomingEvent = { title: string; date: string };
 
@@ -412,6 +412,9 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
 
   function submit() {
     setError(null);
+    // 이름만 적힌 줄을 조용히 버리지 않는다 (편집 화면과 같은 규칙)
+    const missing = krs.map(krMissingReason).filter(Boolean) as string[];
+    if (missing.length > 0) { setError(missing.join(' · ')); return; }
     startTransition(async () => {
       try {
         const id = await createGoalPlan({

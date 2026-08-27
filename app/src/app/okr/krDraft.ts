@@ -86,10 +86,27 @@ export function krExplain(k: KRDraft): string {
   return `0에서 ${t.num}${unit}을 채우면 100%예요.${how}`;
 }
 
+/**
+ * 저장할 만한 지표인가.
+ *
+ * 셋 중 하나만 있으면 성립한다.
+ *   내용형        — "틀린 유형 적어두기"처럼 세는 게 목적이 아닌 것
+ *   최종 목표     — "100문제"
+ *   이번 주 몫    — "매주 20문제". 최종을 안 정했어도 오늘 할일은 굴러간다.
+ *
+ * 세 번째가 없어서 사고가 났다. '이번 주' 칸만 채우고 저장하면 아무 말 없이 사라졌다.
+ * 화면도 서버도 조용했으니 사용자는 저장 버튼이 고장난 줄 알 수밖에 없었다.
+ */
 export function isKrFilled(k: KRDraft): boolean {
-  // 내용형은 목표 개수가 없어도 성립한다 ("틀린 유형 적어두기"처럼 세는 게 목적이 아닌 경우)
   if (!k.title.trim()) return false;
-  return krMode(k) === 'text' || parseAmount(k.target).num > 0;
+  return krMode(k) === 'text' || parseAmount(k.target).num > 0 || parseAmount(k.weekly).num > 0;
+}
+
+/** 이름은 적었는데 아무 숫자도 없는 줄 — 조용히 버리지 말고 이걸로 말해준다. */
+export function krMissingReason(k: KRDraft): string | null {
+  if (!k.title.trim()) return null;         // 빈 줄은 그냥 안 쓴 칸이다
+  if (isKrFilled(k)) return null;
+  return `「${k.title.trim()}」에 목표나 이번 주 몫 중 하나는 적어주세요`;
 }
 
 /** 서버로 보낼 형태 — 원문 문자열을 숫자·단위로 확정한다. */

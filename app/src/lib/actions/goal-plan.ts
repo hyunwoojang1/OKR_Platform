@@ -227,7 +227,8 @@ export async function createGoalPlan(payload: {
 
   const krRows = payload.krs
     // 내용형은 목표 개수 없이도 성립한다 — 적은 게 기록으로 쌓이는 게 목적인 지표가 있다.
-    .filter((k) => k.title.trim() && (k.mode === 'text' || (Number.isFinite(k.target) && k.target > 0)))
+    .filter((k) =>
+      k.title.trim() && (k.mode === 'text' || (Number.isFinite(k.target) && k.target > 0) || Number(k.weeklyTarget) > 0))
     .map((k) => {
       const cadence = k.cadence === 'weekly' ? 'weekly' : 'total';
       const start = cadence === 'total' && Number.isFinite(k.start) && (k.start as number) >= 0 ? (k.start as number) : 0;
@@ -295,7 +296,10 @@ export async function updateGoalPlan(payload: {
   if (exErr) throw new Error(`지표 조회 실패: ${exErr.message}`);
   const existing = new Map((existingRows ?? []).map((r) => [r.id as string, Number(r.current_value)]));
 
-  const valid = payload.krs.filter((k) => k.title.trim() && (k.mode === 'text' || (Number.isFinite(k.target) && k.target > 0)));
+  // 최종 목표가 없어도 이번 주 몫만 있으면 성립한다 — "매주 20문제, 최종은 안 정함".
+  // 화면의 isKrFilled 와 같은 잣대여야 한다. 어긋나면 화면은 보냈는데 서버가 버린다.
+  const valid = payload.krs.filter((k) =>
+    k.title.trim() && (k.mode === 'text' || (Number.isFinite(k.target) && k.target > 0) || Number(k.weeklyTarget) > 0));
   const keptIds = new Set<string>();
 
   for (const k of valid) {

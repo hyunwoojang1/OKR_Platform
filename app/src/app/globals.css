@@ -331,3 +331,6 @@ input[type="checkbox"] { -webkit-appearance: checkbox; appearance: auto; }
 /* 기록 타임라인 */
 .tl-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .tl-line { flex: 1; width: 1px; background: var(--line-strong); }
+
+/* 당겨서 새로고침 표시의 회전 */
+@keyframes ptr-spin { to { transform: rotate(360deg); } }

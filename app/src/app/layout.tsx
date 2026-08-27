@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import Nav from './Nav';
 import './globals.css';
+import PullToRefresh from './PullToRefresh';
 
 export const metadata: Metadata = {
   title: '목표 허브',
@@ -30,6 +31,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-dvh antialiased">
         <Nav />
+        {/* 홈 화면에 담아 쓰면 주소창이 없어 새로고침할 방법이 없다 — 당겨서 다시 불러온다 */}
+        <PullToRefresh />
         <div className="mx-auto max-w-[1440px] px-5 pb-28 pt-4 md:px-8 md:pb-12">{children}</div>
         <script
           dangerouslySetInnerHTML={{
