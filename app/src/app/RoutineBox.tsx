@@ -1,4 +1,5 @@
-import { toggleHabitLog } from '@/lib/actions';
+import { toggleHabitLog, deleteHabit } from '@/lib/actions';
+import SwipeRow from './SwipeRow';
 import { HabitEditor } from './RowEditors';
 import { weekCountOf, streakOf } from '@/lib/queries';
 import type { Area, Habit, HabitLog, KeyResult, SessionLog } from '@/lib/types';
@@ -71,7 +72,20 @@ export default function RoutineBox({ date, habits, habitLogs, areas, dailyKrs, k
           const filled = week >= target;
           const streak = streakOf(habit.id, habitLogs);
           return (
-            <li key={habit.id} className="row flex-wrap" style={filled ? { opacity: 0.62 } : undefined}>
+            <SwipeRow
+              key={habit.id}
+              label={habit.title}
+              confirmText="이 루틴을 지울까요?"
+              onDelete={(
+                <form action={deleteHabit}>
+                  <input type="hidden" name="id" value={habit.id} />
+                  <button type="submit" aria-label={`${habit.title} 정말 지우기`}
+                    className="rounded-lg px-2 py-1 text-[12px] font-medium"
+                    style={{ background: 'var(--ink)', color: '#fff' }}>지우기</button>
+                </form>
+              )}
+            >
+            <div className="row flex-wrap" style={filled ? { opacity: 0.62 } : undefined}>
               <span className="row-bar" style={{ background: color }} />
               <FillMark filled={filled} color={color} />
               <div className="min-w-0 flex-1">
@@ -99,7 +113,8 @@ export default function RoutineBox({ date, habits, habitLogs, areas, dailyKrs, k
                 </form>
               )}
               <HabitEditor habit={habit} areas={areas} />
-            </li>
+            </div>
+            </SwipeRow>
           );
         })}
 

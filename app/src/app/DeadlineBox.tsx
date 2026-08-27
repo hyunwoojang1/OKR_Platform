@@ -1,4 +1,5 @@
-import { toggleEventDone, toggleTask } from '@/lib/actions';
+import { toggleEventDone, toggleTask, deleteEvent, deleteTask } from '@/lib/actions';
+import SwipeRow from './SwipeRow';
 import { TaskEditor } from './RowEditors';
 import { ddayOf } from '@/lib/deadline';
 import type { Area, CalendarEvent, DailyTask } from '@/lib/types';
@@ -24,8 +25,15 @@ function dday(d: number): { text: string; strong: boolean } {
   return { text: `D-${d}`, strong: d <= 1 };
 }
 
-function Row({ children }: { children: React.ReactNode }) {
-  return <li className="row flex-wrap">{children}</li>;
+/** 쓸면 휴지통이 나오는 줄. 지우면 그냥 없어진다 — 마감은 되살릴 개념이 아니다. */
+function Row({ label, onDelete, children }: {
+  label: string; onDelete: React.ReactNode; children: React.ReactNode;
+}) {
+  return (
+    <SwipeRow label={label} confirmText="이 마감을 지울까요?" onDelete={onDelete}>
+      <div className="row flex-wrap">{children}</div>
+    </SwipeRow>
+  );
 }
 
 function DdayTag({ d }: { d: number }) {
@@ -74,7 +82,18 @@ export default function DeadlineBox({ date, events, tasks, areas }: {
           const title = e.title;
           const d = ddayOf(e.starts_at, date);
           return (
-            <Row key={e.id}>
+            <Row
+              key={e.id}
+              label={title}
+              onDelete={(
+                <form action={deleteEvent}>
+                  <input type="hidden" name="id" value={e.id} />
+                  <button type="submit" aria-label={`${title} 정말 지우기`}
+                    className="rounded-lg px-2 py-1 text-[12px] font-medium"
+                    style={{ background: 'var(--ink)', color: '#fff' }}>지우기</button>
+                </form>
+              )}
+            >
               <span className="row-bar" style={{ background: 'var(--ink-soft)' }} />
               <form action={toggleEventDone} className="flex">
                 <input type="hidden" name="id" value={e.id} />
@@ -95,7 +114,20 @@ export default function DeadlineBox({ date, events, tasks, areas }: {
           const area = areaOf(task.area_id);
           const shown = task.title;
           return (
-            <li key={task.id} className="row flex-wrap" style={task.done ? { opacity: 0.55 } : undefined}>
+            <SwipeRow
+              key={task.id}
+              label={shown}
+              confirmText="이 할일을 지울까요?"
+              onDelete={(
+                <form action={deleteTask}>
+                  <input type="hidden" name="id" value={task.id} />
+                  <button type="submit" aria-label={`${shown} 정말 지우기`}
+                    className="rounded-lg px-2 py-1 text-[12px] font-medium"
+                    style={{ background: 'var(--ink)', color: '#fff' }}>지우기</button>
+                </form>
+              )}
+            >
+            <div className="row flex-wrap" style={task.done ? { opacity: 0.55 } : undefined}>
               {area && <span className="row-bar" style={{ background: area.color }} />}
               <form action={toggleTask} className="flex">
                 <input type="hidden" name="id" value={task.id} />
@@ -115,7 +147,8 @@ export default function DeadlineBox({ date, events, tasks, areas }: {
               </div>
               {task.due_date && <DdayTag d={dueOf(task.due_date)} />}
               <TaskEditor task={task} areas={areas} />
-            </li>
+            </div>
+            </SwipeRow>
           );
         })}
       </ul>

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { logKrProgress } from '@/lib/actions';
+import { logKrProgress, deleteKeyResult } from '@/lib/actions';
+import SwipeRow from './SwipeRow';
 import { fmtKrValue, krUnit, isPaceKr, type KeyResult, type SessionLog } from '@/lib/types';
 
 /**
@@ -23,6 +24,8 @@ export default function KrRow({ kr, color, done, todayLogs }: {
   todayLogs: SessionLog[];
 }) {
   const [open, setOpen] = useState(false);
+  // 재서 갈아끼우는 지표(모의고사 평균·최장 거리)는 "얼마나 더"가 아니라 "지금 얼마"를 묻는다.
+  const isSet = kr.accrual === 'set';
   const target = kr.target_value == null ? null : Number(kr.target_value);
   const filled = target != null && done >= target;
   // 목표치가 없는 지표는 채운다는 개념이 없다. 점선 빈 칸으로 두면 "아직 못 했다"로 읽힌다.
@@ -34,10 +37,24 @@ export default function KrRow({ kr, color, done, todayLogs }: {
     ? kr.cadence === 'weekly' ? '이번 주 다 채웠어요' : '목표를 다 채웠어요'
     : openEnded
       ? '정해진 개수 없이 쌓아가는 것'
-      : `${Math.round((target - done) * 100) / 100}${unit} 더`;
+      : isSet
+        ? `지금 ${fmtKrValue(kr, done)}${unit} · 목표 ${fmtKrValue(kr, target)}${unit}`
+        : `${Math.round((target - done) * 100) / 100}${unit} 더`;
 
   return (
-    <li className="row flex-wrap" style={filled ? { opacity: 0.62 } : undefined}>
+    <SwipeRow
+      label={kr.title}
+      confirmText="이 지표를 지울까요?"
+      onDelete={(
+        <form action={deleteKeyResult}>
+          <input type="hidden" name="id" value={kr.id} />
+          <button type="submit" aria-label={`${kr.title} 정말 지우기`}
+            className="rounded-lg px-2 py-1 text-[12px] font-medium"
+            style={{ background: 'var(--ink)', color: '#fff' }}>지우기</button>
+        </form>
+      )}
+    >
+    <div className="row flex-wrap" style={filled ? { opacity: 0.62 } : undefined}>
       <span className="row-bar" style={{ background: color }} />
 
       {/* 왼쪽 = 상태. 목표를 채우면 켜진다. 목표가 없는 지표는 '쌓는 중' 을 뜻하는 점. */}
@@ -80,7 +97,7 @@ export default function KrRow({ kr, color, done, todayLogs }: {
           aria-label={open ? `${kr.title} 기록 칸 닫기` : `${kr.title} 오늘 기록하기`}
           className="chip pressable shrink-0 !py-0.5 !text-[11px]"
           style={{ borderColor: color, color }}>
-          {open ? '닫기' : '＋ 기록'}
+          {open ? '닫기' : isSet ? '＋ 지금 값' : '＋ 기록'}
         </button>
       )}
 
@@ -94,7 +111,7 @@ export default function KrRow({ kr, color, done, todayLogs }: {
                 autoFocus
                 required
                 inputMode={isPaceKr(kr) ? 'text' : 'decimal'}
-                placeholder={isPaceKr(kr) ? '예: 6:16' : '얼마나 했나요?'}
+                placeholder={isPaceKr(kr) ? '예: 6:16' : isSet ? '지금 얼마인가요?' : '얼마나 했나요?'}
                 className="min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-[14px]"
                 style={{ borderColor: 'var(--line-strong)' }}
               />
@@ -115,6 +132,7 @@ export default function KrRow({ kr, color, done, todayLogs }: {
             style={{ background: 'var(--accent-bg)', color: 'var(--accent-deep)' }}>기록</button>
         </form>
       )}
-    </li>
+    </div>
+    </SwipeRow>
   );
 }

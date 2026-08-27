@@ -24,6 +24,8 @@ export type KeyResult = {
   input_mode: 'check' | 'number' | 'text';
   /** check형이 한 번에 오르는 양 (보통 1) */
   step: number;
+  /** sum=기록할 때마다 더한다 / set=적은 값으로 갈아끼운다(측정값). 014 */
+  accrual: 'sum' | 'set';
 };
 
 /**

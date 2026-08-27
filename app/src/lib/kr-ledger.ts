@@ -20,7 +20,10 @@ import { db } from './db';
 
 export type KrCredit = {
   krId: string;
+  /** sum 이면 더할 양, set 이면 새로 갈아끼울 값 */
   delta: number;
+  /** 'sum' 누적 / 'set' 측정값 갈아끼우기 (014) */
+  accrual?: 'sum' | 'set';
   note: string;
   objectiveId?: string | null;
   taskId?: string | null;
@@ -31,10 +34,24 @@ export type KrCredit = {
   unit?: string;
 };
 
-/** 지표를 올리고 그 근거 기록을 남긴다. 이 함수 밖에서 current_value 를 더하지 않는다. */
+/** 지표를 움직이고 그 근거 기록을 남긴다. 이 함수 밖에서 current_value 를 만지지 않는다. */
 export async function creditKr(c: KrCredit): Promise<{ logId: string }> {
-  const { error: addErr } = await db().rpc('kr_add', { p_id: c.krId, p_delta: c.delta });
-  if (addErr) throw new Error(`지표 반영 실패: ${addErr.message}`);
+  const set = c.accrual === 'set';
+
+  // 갈아끼우는 지표는 되돌릴 때 '이전 값'이 있어야 한다. 지금 값을 먼저 읽어 기록에 같이 남긴다.
+  let before = 0;
+  if (set) {
+    const { data: cur, error: curErr } = await db()
+      .from('key_results').select('current_value').eq('id', c.krId).maybeSingle();
+    if (curErr) throw new Error(`지표 조회 실패: ${curErr.message}`);
+    before = Number(cur?.current_value ?? 0);
+    const { error: setErr } = await db()
+      .from('key_results').update({ current_value: c.delta }).eq('id', c.krId);
+    if (setErr) throw new Error(`지표 반영 실패: ${setErr.message}`);
+  } else {
+    const { error: addErr } = await db().rpc('kr_add', { p_id: c.krId, p_delta: c.delta });
+    if (addErr) throw new Error(`지표 반영 실패: ${addErr.message}`);
+  }
 
   const { data, error } = await db().from('session_logs').insert({
     objective_id: c.objectiveId ?? null,
@@ -44,12 +61,23 @@ export async function creditKr(c: KrCredit): Promise<{ logId: string }> {
     initiative_id: c.initiativeId ?? null,
     kind: 'check',
     note: c.note,
-    metrics: c.textMode ? null : [{ v: c.delta, u: c.unit ?? '' }],
+    // set 형은 [새 값, 이전 값] 두 개를 남긴다 — 두 번째가 되돌리기의 근거다.
+    metrics: c.textMode ? null
+      : set ? [{ v: c.delta, u: c.unit ?? '' }, { v: before, u: 'prev' }]
+        : [{ v: c.delta, u: c.unit ?? '' }],
   }).select('id').single();
 
   if (error) {
-    // 지표만 오르고 되돌릴 근거가 없는 상태를 만들지 않는다.
-    await db().rpc('kr_add', { p_id: c.krId, p_delta: -c.delta });
+    // 지표만 움직이고 되돌릴 근거가 없는 상태를 만들지 않는다.
+    // 이 되돌리기마저 실패하면 그건 조용히 넘길 일이 아니라 로그로 남긴다.
+    if (set) {
+      const { error: backErr } = await db()
+        .from('key_results').update({ current_value: before }).eq('id', c.krId);
+      if (backErr) console.error('[kr-ledger] 값 되돌리기 실패:', backErr.message, c.krId);
+    } else {
+      const { error: backErr } = await db().rpc('kr_add', { p_id: c.krId, p_delta: -c.delta });
+      if (backErr) console.error('[kr-ledger] 값 되돌리기 실패:', backErr.message, c.krId);
+    }
     throw new Error(`기록 남기기 실패: ${error.message}`);
   }
   return { logId: data.id };
@@ -69,14 +97,25 @@ type LogRow = { id: string; key_result_id: string | null; metrics: { v: number; 
 async function revertOne(log: LogRow): Promise<void> {
   if (log.key_result_id) {
     const { data: kr, error: krErr } = await db()
-      .from('key_results').select('step,input_mode').eq('id', log.key_result_id).maybeSingle();
+      .from('key_results').select('step,input_mode,accrual').eq('id', log.key_result_id).maybeSingle();
     // 조회가 실패했으면 지우지 않는다 — 지표는 그대로인데 근거만 사라지는 게 최악이다.
     if (krErr) throw new Error(`지표 조회 실패: ${krErr.message}`);
     if (kr) {
-      const fallback = Number(kr.step) || 1;
-      const back = kr.input_mode === 'text' ? fallback : (log.metrics?.[0]?.v ?? fallback);
-      const { error: addErr } = await db().rpc('kr_add', { p_id: log.key_result_id, p_delta: -back });
-      if (addErr) throw new Error(`지표 되돌리기 실패: ${addErr.message}`);
+      const prev = log.metrics?.find((m) => m.u === 'prev');
+      if (kr.accrual === 'set') {
+        // 갈아끼운 지표는 '뺀다'가 성립하지 않는다. 그때 적어둔 이전 값으로 되돌린다.
+        if (prev) {
+          const { error: setErr } = await db()
+            .from('key_results').update({ current_value: prev.v }).eq('id', log.key_result_id);
+          if (setErr) throw new Error(`지표 되돌리기 실패: ${setErr.message}`);
+        }
+        // prev 가 없으면 014 이전에 남은 옛 기록이다 — 값을 함부로 흔들지 않고 기록만 지운다.
+      } else {
+        const fallback = Number(kr.step) || 1;
+        const back = kr.input_mode === 'text' ? fallback : (log.metrics?.[0]?.v ?? fallback);
+        const { error: addErr } = await db().rpc('kr_add', { p_id: log.key_result_id, p_delta: -back });
+        if (addErr) throw new Error(`지표 되돌리기 실패: ${addErr.message}`);
+      }
     }
     // kr 이 null 이면 지표가 이미 지워진 것 — 013 이후 기록은 남고 참조만 끊긴다. 로그만 치운다.
   }

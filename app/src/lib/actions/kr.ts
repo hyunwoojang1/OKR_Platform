@@ -80,7 +80,7 @@ export async function logKrProgress(form: FormData) {
 
   const { data: kr, error } = await db()
     .from('key_results')
-    .select('id,title,unit,current_value,objective_id,input_mode,step,cadence,source')
+    .select('id,title,unit,current_value,objective_id,input_mode,step,cadence,source,accrual')
     .eq('id', id)
     .maybeSingle();
   if (error) throw new Error(`지표 조회 실패: ${error.message}`);
@@ -91,12 +91,14 @@ export async function logKrProgress(form: FormData) {
     throw new Error(`'${kr.title}'은(는) 자동으로 세는 지표예요. 루틴을 체크하면 따라 올라갑니다`);
   }
 
+  const isSet = kr.accrual === 'set';
   let delta = Number(kr.step) || 1;
   if (kr.input_mode === 'number') {
     const { parsePace, isPaceKr } = await import('../types');
     const parsed = isPaceKr(kr as { title: string }) ? parsePace(rawAmount) : Number(rawAmount);
     if (parsed == null || !Number.isFinite(parsed) || parsed <= 0) {
-      throw new Error('얼마나 했는지 숫자로 적어주세요');
+      // 재서 적는 지표는 "얼마나 더"가 아니라 "지금 얼마"를 묻는 것이라 말도 그렇게 한다.
+      throw new Error(isSet ? '지금 값을 숫자로 적어주세요' : '얼마나 했는지 숫자로 적어주세요');
     }
     delta = parsed;
   } else if (kr.input_mode === 'text' && !note) {
@@ -110,6 +112,7 @@ export async function logKrProgress(form: FormData) {
   await creditKr({
     krId: kr.id,
     delta,
+    accrual: isSet ? 'set' : 'sum',
     note: body,
     objectiveId: kr.objective_id,
     unit: kr.unit || '',
@@ -189,4 +192,24 @@ export async function createLog(form: FormData) {
   );
   const oid = (form.get('objective_id') as string)?.trim();
   revalidatePath(oid ? `/okr/${oid}` : '/okr');
+}
+
+/**
+ * 지표를 지운다 — "이제 이건 안 잰다"는 뜻이다.
+ *
+ * 그동안 쌓인 기록은 남긴다(사용자 확인, 2026-08-27). 013에서 기록↔지표 연결을
+ * 끊기만 하도록 바꿔둬서, 지표가 사라져도 "8월 27일 우리자산운용 제출" 같은 줄은
+ * 타임라인에 그대로 있다. 한 일은 한 일이다.
+ */
+export async function deleteKeyResult(form: FormData) {
+  const id = must(form.get('id'), '지표');
+  const { data: kr, error } = await db()
+    .from('key_results').select('id,title,objective_id').eq('id', id).maybeSingle();
+  if (error) throw new Error(`지표 조회 실패: ${error.message}`);
+  if (!kr) return;                      // 이미 없으면 할 일이 없다
+
+  await run('지표 삭제', () => db().from('key_results').delete().eq('id', id));
+  revalidatePath('/');
+  revalidatePath('/okr');
+  if (kr.objective_id) revalidatePath(`/okr/${kr.objective_id}`);
 }

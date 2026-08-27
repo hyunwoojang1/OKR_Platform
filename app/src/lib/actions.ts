@@ -32,6 +32,7 @@ export {
   recordWeeklyMetric,
   deleteLog,
   createLog,
+  deleteKeyResult,
 } from './actions/kr';
 export {
   createTask,
