@@ -149,20 +149,18 @@ export async function logKrProgress(form: FormData) {
     throw new Error('무엇을 했는지 적어주세요');
   }
 
-  const next = Math.round((Number(kr.current_value) + delta) * 100) / 100;
-  await run('지표 반영', () => db().from('key_results').update({ current_value: next }).eq('id', id));
-
-  // 기록은 지표와 함께 남긴다 — 내용형에서 "언제 어디 지원했는지"를 되짚는 근거가 된다.
+  // 지표를 올리고 기록을 남기는 건 원장 한 곳에서만 한다.
+  // 기록은 내용형에서 "언제 어디 지원했는지"를 되짚는 근거이기도 하다.
   const body = note || `${kr.title} ${delta}${kr.unit ?? ''}`;
-  await run('기록 남기기', () =>
-    db().from('session_logs').insert({
-      objective_id: kr.objective_id,
-      key_result_id: kr.id,
-      kind: 'check',
-      note: body,
-      metrics: kr.input_mode === 'text' ? null : [{ v: delta, u: kr.unit || '' }],
-    }),
-  );
+  const { creditKr } = await import('./kr-ledger');
+  await creditKr({
+    krId: kr.id,
+    delta,
+    note: body,
+    objectiveId: kr.objective_id,
+    unit: kr.unit || '',
+    textMode: kr.input_mode === 'text',
+  });
 
   revalidatePath('/');
   revalidatePath('/okr');
@@ -173,22 +171,14 @@ export async function logKrProgress(form: FormData) {
 export async function undoKrProgress(form: FormData) {
   const logId = must(form.get('log_id'), '기록');
   const { data: log, error } = await db()
-    .from('session_logs').select('id,key_result_id,metrics,objective_id').eq('id', logId).maybeSingle();
+    .from('session_logs').select('id,objective_id,key_result_id').eq('id', logId).maybeSingle();
   if (error) throw new Error(`기록 조회 실패: ${error.message}`);
   if (!log?.key_result_id) throw new Error('되돌릴 기록이 없습니다');
 
-  const { data: kr } = await db()
-    .from('key_results').select('current_value,step,input_mode').eq('id', log.key_result_id).maybeSingle();
-  if (kr) {
-    const metrics = (log.metrics ?? []) as { v: number; u: string }[];
-    const fallback = Number(kr.step) || 1;
-    const back = kr.input_mode === 'text' ? fallback : (metrics[0]?.v ?? fallback);
-    const next = Math.max(0, Math.round((Number(kr.current_value) - back) * 100) / 100);
-    await run('지표 되돌리기', () =>
-      db().from('key_results').update({ current_value: next }).eq('id', log.key_result_id!),
-    );
-  }
-  await run('기록 삭제', () => db().from('session_logs').delete().eq('id', logId));
+  // 되돌리는 산수는 원장 한 곳에만 있다 — 올리는 쪽과 짝이 어긋나지 않게.
+  const { revertKrLog } = await import('./kr-ledger');
+  await revertKrLog(logId);
+
   revalidatePath('/');
   revalidatePath('/okr');
   if (log.objective_id) revalidatePath(`/okr/${log.objective_id}`);
@@ -274,11 +264,19 @@ export async function createTask(form: FormData) {
 export async function toggleTask(form: FormData) {
   const id = must(form.get('id'), '할일');
   const done = form.get('done') === 'true';
-  await run('할일 체크', () =>
-    db().from('daily_tasks').update({ done, done_at: done ? new Date().toISOString() : null }).eq('id', id),
-  );
-  const { data } = await db()
-    .from('daily_tasks').select('title,area_id,initiative_id').eq('id', id).maybeSingle();
+
+  // 이미 그 상태면 0행이 돌아온다 — 더블탭·재시도로 들어온 두 번째 요청은 여기서 끝난다.
+  // 코드로 "이미 있나" 를 먼저 물어보면 동시에 들어온 둘이 나란히 통과해버린다.
+  const { data, error: lockErr } = await db()
+    .from('daily_tasks')
+    .update({ done, done_at: done ? new Date().toISOString() : null })
+    .eq('id', id)
+    .eq('done', !done)
+    .select('title,area_id,initiative_id')
+    .maybeSingle();
+  if (lockErr) throw new Error(`할일 체크 실패: ${lockErr.message}`);
+  if (!data) return;
+
   if (done) {
     // 체크 = 자동 로그 (만능 원자 원칙 — 실패해도 체크는 유지)
     let objectiveId: string | null = null;
@@ -298,10 +296,10 @@ export async function toggleTask(form: FormData) {
       );
     }
   } else {
-    // 되돌리기 = 흔적도 되돌린다. 안 지우면 체크·해제를 반복할 때마다 타임라인에 유령 기록이 쌓인다.
-    await run('체크 기록 삭제', () =>
-      db().from('session_logs').delete().eq('task_id', id).eq('kind', 'check'),
-    );
+    // 되돌리기 = 흔적도 되돌린다. 안 지우면 체크·해제를 반복할 때마다 유령 기록이 쌓인다.
+    // 원장을 거치는 이유: 그 기록이 지표를 올려뒀다면 지표도 같은 양만큼 내려야 한다.
+    const { revertKrLogsWhere } = await import('./kr-ledger');
+    await revertKrLogsWhere({ taskId: id });
     if (data?.initiative_id) {
       await run('주간 계획 되돌리기', () =>
         db().from('initiatives').update({ status: 'active' }).eq('id', data.initiative_id!),
@@ -329,7 +327,9 @@ export async function updateTask(form: FormData) {
 /** 할일 지우기. 딸린 완료 기록도 같이 치운다 — 없는 할일을 가리키는 기록만 남으면 타임라인이 거짓말을 한다. */
 export async function deleteTask(form: FormData) {
   const id = must(form.get('id'), '할일');
-  await run('기록 삭제', () => db().from('session_logs').delete().eq('task_id', id));
+  // 기록을 그냥 지우면 그 기록이 올려둔 지표가 부풀린 채로 남는다(원장 불변식 ①).
+  const { revertKrLogsWhere } = await import('./kr-ledger');
+  await revertKrLogsWhere({ taskId: id });
   await run('할일 삭제', () => db().from('daily_tasks').delete().eq('id', id));
   revalidatePath('/');
   revalidatePath('/calendar');
@@ -504,6 +504,10 @@ export async function deleteEvent(form: FormData) {
   }
   const deletable = rows.filter((r) => !failed.includes(r.id)).map((r) => r.id);
   if (deletable.length > 0) {
+    // 일정을 먼저 지우면 event_id 가 끊겨(on delete set null) 딸린 할일·기록을 되돌릴
+    // 근거가 사라진다. 그래서 지우기 전에 완료 흔적을 먼저 걷는다.
+    const { eventDone } = await import('./event-done');
+    for (const id of deletable) await eventDone.revert(id);
     await run('일정 삭제', () => db().from('calendar_events').delete().in('id', deletable));
   }
   revalidatePath('/calendar');
@@ -523,74 +527,12 @@ export async function deleteEvent(form: FormData) {
 export async function toggleEventDone(form: FormData) {
   const id = must(form.get('id'), '일정');
   const done = form.get('done') === 'true';
+  const { eventDone } = await import('./event-done');
 
-  const { data: ev, error } = await db()
-    .from('calendar_events').select('id,title,done_at,key_result_id').eq('id', id).maybeSingle();
-  if (error) throw new Error(`일정 조회 실패: ${error.message}`);
-  if (!ev) throw new Error('일정을 찾을 수 없습니다');
-
-  if (!done) {
-    // 되돌리기 — 딸려 만들어진 할일과 기록도 같이 치운다
-    const { data: tasks } = await db().from('daily_tasks').select('id').eq('source_ref', id).eq('source', 'job_posting');
-    for (const t of tasks ?? []) {
-      await run('기록 삭제', () => db().from('session_logs').delete().eq('task_id', t.id));
-      await run('할일 삭제', () => db().from('daily_tasks').delete().eq('id', t.id));
-    }
-    await run('완료 해제', () => db().from('calendar_events').update({ done_at: null }).eq('id', id));
-    revalidatePath('/');
-    revalidatePath('/calendar');
-    return;
-  }
-
-  const today = kstToday();
-  await run('일정 완료', () => db().from('calendar_events').update({ done_at: new Date().toISOString() }).eq('id', id));
-
-  // ② 오늘 할일에 완료된 채로 — 같은 일정으로 두 번 만들지 않는다
-  const { data: exists } = await db()
-    .from('daily_tasks').select('id').eq('source_ref', id).eq('date', today).maybeSingle();
-  if (!exists) {
-    // due_date를 넣어야 '마감·제출' 구역으로 간다(없으면 '그 외'로 떨어진다)
-    const { data: full } = await db().from('calendar_events').select('starts_at').eq('id', id).maybeSingle();
-    const dueDate = full
-      ? new Date(new Date(full.starts_at).getTime() + 9 * 3600_000).toISOString().slice(0, 10)
-      : today;
-    await run('오늘 할일 등재', () =>
-      db().from('daily_tasks').insert({
-        title: ev.title,
-        date: today,
-        done: true,
-        done_at: new Date().toISOString(),
-        due_date: dueDate,
-        source: 'job_posting',
-        source_ref: id,
-        key_result_id: ev.key_result_id,
-      }),
-    );
-  }
-
-  // ③ 연결된 지표가 있으면 올리고 기록도 남긴다
-  if (ev.key_result_id) {
-    const { data: kr } = await db()
-      .from('key_results').select('id,title,unit,current_value,objective_id,step').eq('id', ev.key_result_id).maybeSingle();
-    if (kr) {
-      const delta = Number(kr.step) || 1;
-      const next = Math.round((Number(kr.current_value) + delta) * 100) / 100;
-      await run('지표 반영', () =>
-        db().from('key_results').update({ current_value: next }).eq('id', kr.id),
-      );
-      await run('기록 남기기', () =>
-        db().from('session_logs').insert({
-          objective_id: kr.objective_id,
-          key_result_id: kr.id,
-          kind: 'check',
-          note: ev.title,
-          metrics: [{ v: delta, u: kr.unit || '' }],
-        }),
-      );
-    }
-  } else {
-    await run('기록 남기기', () => db().from('session_logs').insert({ kind: 'check', note: ev.title }));
-  }
+  // 완료와 되돌리기가 무엇을 건드리는지는 event-done.ts 맨 위 대조표에 나란히 적혀 있다.
+  // 여기서 몸통을 벌려 놓으면 또 둘이 갈라진다.
+  if (done) await eventDone.apply(id);
+  else await eventDone.revert(id);
 
   revalidatePath('/');
   revalidatePath('/calendar');
@@ -822,18 +764,32 @@ export async function createLog(form: FormData) {
 export async function toggleInitiativeDone(form: FormData) {
   const id = must(form.get('id'), '할 일');
   const done = form.get('done') === 'true';
-  await run('할 일 체크', () =>
-    db().from('initiatives').update({ status: done ? 'done' : 'active' }).eq('id', id),
-  );
+
+  // toggleTask 와 같은 잠금 — 이미 그 상태면 0행이라 두 번째 요청은 여기서 끝난다.
+  const { data, error: lockErr } = await db()
+    .from('initiatives')
+    .update({ status: done ? 'done' : 'active' })
+    .eq('id', id)
+    .eq('status', done ? 'active' : 'done')
+    .select('title,area_id')
+    .maybeSingle();
+  if (lockErr) throw new Error(`할 일 체크 실패: ${lockErr.message}`);
+  if (!data) return;
+
   if (done) {
-    // 체크 = 자동 로그 (실패해도 체크는 유지)
-    const { data } = await db().from('initiatives').select('title,area_id,milestone_id').eq('id', id).maybeSingle();
+    // 기록에 initiative_id 를 남긴다(013). 예전엔 이게 없어서 해제할 때 지울 열쇠가 없었고,
+    // 체크↔해제를 반복하면 유령 기록이 계속 쌓였다.
     const oid = (form.get('objective_id') as string)?.trim() || null;
     await run('체크 기록', () =>
       db().from('session_logs').insert({
-        objective_id: oid, area_id: data?.area_id ?? null, kind: 'check', note: data?.title ?? null,
+        objective_id: oid, area_id: data.area_id ?? null, initiative_id: id,
+        kind: 'check', note: data.title ?? null,
       }),
     );
+  } else {
+    // 체크가 남긴 기록을 지운다 — 완료가 만든 것과 짝이 맞아야 한다.
+    const { revertKrLogsWhere } = await import('./kr-ledger');
+    await revertKrLogsWhere({ initiativeId: id });
   }
   const oid = (form.get('objective_id') as string)?.trim();
   revalidatePath(oid ? `/okr/${oid}` : '/okr');
