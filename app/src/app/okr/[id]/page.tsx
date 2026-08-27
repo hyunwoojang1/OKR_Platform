@@ -205,7 +205,7 @@ export default async function GoalDetailPage({
                       <input type="hidden" name="id" value={ini.id} />
                       <input type="hidden" name="objective_id" value={id} />
                       <input type="hidden" name="done" value={done ? 'false' : 'true'} />
-                      <button type="submit" aria-label={done ? '체크 해제' : '완료'} className={`check ${done ? 'on' : ''}`}>✓</button>
+                      <button type="submit" aria-label={`${ini.title} ${done ? '체크 해제' : '완료'}`} className={`check ${done ? 'on' : ''}`}>✓</button>
                       <span className={`flex-1 text-[15px] ${done ? 'line-through' : ''}`} style={done ? { color: 'var(--ink-3)' } : undefined}>
                         {ini.title}
                       </span>

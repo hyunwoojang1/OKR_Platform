@@ -29,14 +29,14 @@ async function mk(created, table, row) {
  * 목표 한 줄짜리 세트 — 영역·목표·지표.
  * 실제 영역/목표에 붙이지 않는 이유: 진짜 지표 숫자를 건드리면 복구가 어려워진다.
  */
-export async function makeGoal(created, { krTitle = '지표', target = 10, source = 'manual', showDaily = false } = {}) {
+export async function makeGoal(created, { krTitle = '지표', target = 10, source = 'manual', showDaily = false, inputMode = 'check' } = {}) {
   const area = await mk(created, 'areas', { name: uniq('영역'), color: '#8A8A8A', sort_order: 99 });
   const objective = await mk(created, 'objectives', {
     area_id: area.id, title: uniq('목표'), period: kstToday().slice(0, 4) + '-Q3', status: 'active',
   });
   const kr = await mk(created, 'key_results', {
     objective_id: objective.id, title: uniq(krTitle), target_value: target,
-    current_value: 0, unit: '건', source, show_daily: showDaily,
+    current_value: 0, unit: '건', source, show_daily: showDaily, input_mode: inputMode,
   });
   return { area, objective, kr };
 }

@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "qa": "node --test --test-concurrency=1 --test-reporter=spec scripts/qa/*.test.mjs",
     "qa:dry": "node scripts/qa/run.mjs --dry",
-    "qa:verify": "node scripts/qa/verify-findings.mjs"
+    "qa:verify": "node scripts/qa/verify-findings.mjs",
+    "qa:chaos": "node scripts/qa/chaos.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
