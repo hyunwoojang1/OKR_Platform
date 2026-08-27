@@ -25,6 +25,16 @@
   --urgent: oklch(0.6 0.16 40);             /* 마감 경고 전용 */
   --urgent-line: oklch(0.85 0.08 40);
 
+  /* 달력에서 목표를 눌렀을 때 하루의 상태 세 가지.
+     '놓친 날'에 진한 빨강을 쓰지 않는다 — 지난 일을 매일 붉게 노려보는 화면은 부담만 준다.
+     채도를 낮춘 흙빛으로 "여기 비었네" 정도만 말하게 한다. */
+  --did: var(--accent);                     /* 한 날 */
+  --did-bg: oklch(0.92 0.05 150);
+  --plan-bg: oklch(0.97 0.015 250);         /* 할 날(아직 안 옴) — 차분한 청회색 */
+  --plan-line: oklch(0.85 0.03 250);
+  --miss: oklch(0.62 0.055 70);             /* 놓친 날 — 흐린 흙빛 */
+  --miss-bg: oklch(0.955 0.022 70);
+
   --radius-sm: 12px;
   --radius: 16px;
   --radius-lg: 24px;
@@ -306,11 +316,17 @@ input[type="checkbox"] { -webkit-appearance: checkbox; appearance: auto; }
 }
 
 /* 목표 포커스: 실행 주간이 한 번 반짝이고 은은하게 남는다 */
+/*
+  목표를 누르면 해당하는 날들이 한 번 반짝인다.
+  배경색은 절대 건드리지 않는다 — 그 자리는 '한 날/할 날/빈 날' 세 색이 쓴다.
+  예전엔 이 애니메이션이 background 를 both 로 물고 있어서 세 색이 전부
+  같은 연둣빛으로 뭉개졌다. 그래서 테두리만 잠깐 그렸다 지운다.
+*/
 @keyframes goal-glow-in {
-  0% { background: oklch(0.88 0.07 150); }
-  100% { background: var(--accent-bg-soft); }
+  0% { box-shadow: inset 0 0 0 2px var(--accent); }
+  100% { box-shadow: inset 0 0 0 0 transparent; }
 }
-.goal-glow { animation: goal-glow-in 0.5s ease-out both; }
+.goal-glow { animation: goal-glow-in 0.5s ease-out; }
 
 /* 기록 타임라인 */
 .tl-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }

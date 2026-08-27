@@ -77,6 +77,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
       title: k.title,
       unit: k.unit ?? '',
       goal: objectives.find((o) => o.id === k.objective_id)?.title ?? '목표',
+      objectiveId: k.objective_id ?? null,
     }));
 
   const logs: LogLite[] = (logsQ.data as SessionLog[]).map((l) => ({

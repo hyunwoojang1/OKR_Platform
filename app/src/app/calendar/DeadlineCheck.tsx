@@ -5,7 +5,7 @@ import { toggleEventDone, setEventDeadline, setEventKr } from '@/lib/actions';
 import type { CalendarEvent } from '@/lib/types';
 
 /** 일정에 연결할 수 있는 지표 — 목록에 필요한 만큼만. */
-export type KrLite = { id: string; title: string; unit: string; goal: string };
+export type KrLite = { id: string; title: string; unit: string; goal: string; objectiveId: string | null };
 
 /**
  * 달력 일정의 완료 동그라미.

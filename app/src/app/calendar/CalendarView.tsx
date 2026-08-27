@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createEvent, sendJobCommand, syncCalendarNow, togglePinEvent } from '@/lib/actions';
@@ -52,6 +52,44 @@ function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Seoul' });
 }
 
+/*
+  브라우저에 저장해둔 화면 취향(주/월, 표시할 겹).
+
+  useState 초기화에서 localStorage 를 읽으면 안 된다. 서버는 그걸 볼 수 없어 늘 기본값으로
+  그리는데 클라이언트가 첫 렌더에서 저장값으로 그려버리면 두 결과가 어긋나고, React 는
+  이 화면을 통째로 버리고 다시 만든다 (콘솔에 "Hydration failed" 가 찍힌다).
+  useEffect 로 나중에 넣는 방법도 있지만 그건 렌더를 한 번 더 부른다.
+
+  useSyncExternalStore 는 서버용 값을 따로 받는 자리가 있어서 이 어긋남이 원리적으로 없다.
+  값은 캐시해 둔다 - 매번 새 객체를 돌려주면 React 가 끝없이 다시 읽는다.
+*/
+const prefListeners = new Set<() => void>();
+const prefCache = new Map<string, unknown>();
+
+function usePref<T>(key: string, fallback: T, normalize: (raw: unknown) => T): [T, (v: T) => void] {
+  const read = (): T => {
+    if (prefCache.has(key)) return prefCache.get(key) as T;
+    let v = fallback;
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw !== null) v = normalize(JSON.parse(raw));
+    } catch { /* 없거나 옛 형식이면 기본값 */ }
+    prefCache.set(key, v);
+    return v;
+  };
+  const value = useSyncExternalStore(
+    (cb) => { prefListeners.add(cb); return () => { prefListeners.delete(cb); }; },
+    read,
+    () => fallback,
+  );
+  const write = (v: T) => {
+    prefCache.set(key, v);
+    try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
+    prefListeners.forEach((cb) => cb());
+  };
+  return [value, write];
+}
+
 export default function CalendarView({
   month, today, initialSelected, events, jobs, logs, goals, krs, syncLabel, syncConnected,
 }: {
@@ -70,32 +108,14 @@ export default function CalendarView({
   const [selected, setSelected] = useState(initialSelected);
   const [focusGoal, setFocusGoal] = useState<string | null>(null);
   // 디폴트 주간 — "이번 주에 뭘 해야 하나"가 점 대신 글자로 보이게 (QA 4번)
-  const [view, setView] = useState<'week' | 'month'>(() => {
-    try {
-      const v = localStorage.getItem('cal-view');
-      if (v === 'month' || v === 'week') return v;
-    } catch {}
-    return 'week';
-  });
-  function switchView(v: 'week' | 'month') {
-    setView(v);
-    try { localStorage.setItem('cal-view', v); } catch {}
-  }
-  const [layers, setLayers] = useState<Layers>(() => {
-    try {
-      const saved = localStorage.getItem('cal-layers');
-      if (saved) return { ...DEFAULT_LAYERS, ...JSON.parse(saved) };
-    } catch {}
-    return DEFAULT_LAYERS;
-  });
+  const [view, switchView] = usePref<'week' | 'month'>('cal-view', 'week',
+    (raw) => (raw === 'month' || raw === 'week' ? raw : 'week'));
+  const [layers, setLayers] = usePref<Layers>('cal-layers', DEFAULT_LAYERS,
+    (raw) => ({ ...DEFAULT_LAYERS, ...(raw as object) }));
   const [layersOpen, setLayersOpen] = useState(false);
 
   function toggleLayer(key: keyof Layers) {
-    setLayers((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      try { localStorage.setItem('cal-layers', JSON.stringify(next)); } catch {}
-      return next;
-    });
+    setLayers({ ...layers, [key]: !layers[key] });
   }
 
   const [y, mo] = [Number(month.slice(0, 4)), Number(month.slice(5, 7))];
@@ -128,6 +148,53 @@ export default function CalendarView({
   // 포커스한 목표: 이니셔티브가 잡힌 주(월~일)와 마감일을 하이라이트
   const focus = goals.find((g) => g.id === focusGoal) ?? null;
   const focusWeeks = useMemo(() => new Set(focus?.weeks.map((w) => w.weekOf) ?? []), [focus]);
+
+  /** 그 목표로 뭔가 한 날 — 기록이 있는 날짜들. "10월까지 러닝 100km"를 누르면 뛴 날이 보인다. */
+  const didDays = useMemo(() => {
+    if (!focus) return new Set<string>();
+    return new Set(logs.filter((l) => l.objective_id === focus.id).map((l) => kstDateStr(l.logged_at)));
+  }, [focus, logs]);
+
+  /**
+   * 목표를 눌렀을 때 하루가 어떤 상태인가.
+   *   did    — 그날 뭔가 했다 (기록이 있다)
+   *   plan   — 하기로 한 주인데 아직 안 온 날
+   *   miss   — 하기로 한 주인데 지나갔고 한 게 없다
+   * miss 에 진한 빨강을 쓰지 않는다. 지난 일을 매일 붉게 노려보는 화면은 부담만 준다.
+   */
+  type DayMark = 'did' | 'plan' | 'miss' | null;
+
+  /**
+   * 이 목표로 '하기로 되어 있는' 날들.
+   *   ① 주간 계획이 잡힌 주 (이니셔티브)
+   *   ② 이 목표의 지표에 걸어둔 달력 마감이 있는 날
+   * ②가 없으면 주간 계획을 안 세운 목표는 아무 표시도 안 난다.
+   */
+  const planDays = useMemo(() => {
+    if (!focus) return new Map<string, boolean>();
+    const mine = new Set(krs.filter((k) => k.objectiveId === focus.id).map((k) => k.id));
+    const m = new Map<string, boolean>();   // 날짜 → 그날 끝냈나
+    for (const e of events) {
+      if (!e.key_result_id || !mine.has(e.key_result_id)) continue;
+      const d = kstDateStr(e.starts_at);
+      m.set(d, (m.get(d) ?? false) || Boolean(e.done_at));
+    }
+    return m;
+  }, [focus, krs, events]);
+
+  const markOf = (day: string): DayMark => {
+    if (!focus) return null;
+    if (didDays.has(day) || planDays.get(day) === true) return 'did';
+    const planned = planDays.has(day) || focusWeeks.has(mondayOf(day));
+    if (!planned) return null;
+    return day < today ? 'miss' : 'plan';
+  };
+  const MARK_BG: Record<Exclude<DayMark, null>, string> = {
+    did: 'var(--did-bg)', plan: 'var(--plan-bg)', miss: 'var(--miss-bg)',
+  };
+  const MARK_DOT: Record<Exclude<DayMark, null>, string> = {
+    did: 'var(--did)', plan: 'var(--plan-line)', miss: 'var(--miss)',
+  };
 
   // 주간 뷰 재료: 선택일이 속한 주(월~일) + 날짜별 목표 마감
   const goalDueByDate = useMemo(() => {
@@ -241,15 +308,15 @@ export default function CalendarView({
                 const dJobs = visibleJobs(day);
                 const dues = goalDueByDate.get(day) ?? [];
                 const nLogs = layers.logs ? (logCountByDate.get(day) ?? 0) : 0;
-                const inFocusWeek = focus !== null && focusWeeks.has(mondayOf(day));
+                const mark = markOf(day);
                 const empty = evs.length === 0 && dJobs.length === 0 && dues.length === 0 && nLogs === 0;
                 return (
                   <div key={day}>
                     {di > 0 && <div className="divider" />}
                     <button
                       onClick={() => setSelected(day)}
-                      className={`flex w-full items-start gap-3 rounded-xl px-1 py-2.5 text-left ${inFocusWeek ? 'goal-glow' : ''}`}
-                      style={inFocusWeek ? { background: 'var(--accent-bg-soft)' } : undefined}
+                      className={`flex w-full items-start gap-3 rounded-xl px-1 py-2.5 text-left ${mark ? 'goal-glow' : ''}`}
+                      style={mark ? { background: MARK_BG[mark] } : undefined}
                     >
                       <div className="w-10 shrink-0 text-center">
                         <div className="mono text-[10px]" style={{ color: dow === 0 ? 'var(--urgent)' : 'var(--ink-3)' }}>{DAY_NAMES[dow]}</div>
@@ -317,20 +384,24 @@ export default function CalendarView({
                 const tint = logTint(logCountByDate.get(day) ?? 0);
                 const hasEv = layers.events && (evByDate.get(day) ?? []).length > 0;
                 const dJobs = visibleJobs(day);
-                const inFocusWeek = focus !== null && focusWeeks.has(mondayOf(day));
+                const mark = markOf(day);
                 const isFocusDue = focus?.dueDate === day;
                 return (
                   <button
                     key={day}
                     onClick={() => setSelected(day)}
-                    className={`flex flex-col items-center gap-0.5 rounded-xl py-1 ${inFocusWeek ? 'goal-glow' : ''}`}
-                    style={inFocusWeek ? { background: 'var(--accent-bg-soft)' } : undefined}
+                    className={`flex flex-col items-center gap-0.5 rounded-xl py-1 ${mark ? 'goal-glow' : ''}`}
+                    style={mark ? { background: MARK_BG[mark] } : undefined}
                   >
                     <span
                       className="mono flex h-8 w-8 items-center justify-center rounded-full text-[13px]"
                       style={
                         isSel
                           ? { background: 'var(--ink)', color: '#fff' }
+                          : mark === 'did'
+                            ? { background: 'var(--did)', color: '#fff', fontWeight: 500 }
+                            : mark === 'miss'
+                              ? { border: `1.5px solid ${MARK_DOT.miss}`, color: 'var(--miss)' }
                           : isFocusDue
                             ? { border: '1.5px solid var(--urgent)', color: 'var(--urgent)', fontWeight: 500 }
                             : isToday
@@ -343,7 +414,12 @@ export default function CalendarView({
                       {i + 1}
                     </span>
                     <span className="flex h-1.5 items-center gap-0.5">
-                      {hasEv && <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--accent)' }} />}
+                      {/*
+                        목표를 켠 동안엔 이 점을 중립색으로 낮춘다.
+                        평소엔 초록이 '일정 있음'이지만, 목표를 켜면 범례가 초록을 '한 날'로 쓴다.
+                        같은 초록이 두 뜻을 가지면 살구색 칸 위의 초록 점이 "기록 있는데 빈 날"로 읽힌다.
+                      */}
+                      {hasEv && <span className="h-1.5 w-1.5 rounded-full" style={{ background: focus ? 'var(--ink-4)' : 'var(--accent)' }} />}
                       {dJobs.length > 0 && <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--urgent)' }} />}
                     </span>
                   </button>
@@ -351,9 +427,23 @@ export default function CalendarView({
               })}
             </div>
             {focus && (
-              <div className="mt-2 flex items-center justify-between rounded-xl px-3 py-2 text-[13px]" style={{ background: 'var(--accent-bg-soft)', color: 'var(--accent-deep)' }}>
-                <span>「{focus.title}」{focus.dueDate ? ` · 마감 ${focus.dueDate.slice(5).replace('-', '/')}` : ''}</span>
-                <button onClick={() => setFocusGoal(null)} className="underline underline-offset-2">해제</button>
+              <div className="mt-2 space-y-1.5 rounded-xl px-3 py-2 text-[13px]" style={{ background: 'var(--accent-bg-soft)', color: 'var(--accent-deep)' }}>
+                <div className="flex items-center justify-between">
+                  <span>「{focus.title}」{focus.dueDate ? ` · 마감 ${focus.dueDate.slice(5).replace('-', '/')}` : ''}</span>
+                  <button onClick={() => setFocusGoal(null)} className="underline underline-offset-2">해제</button>
+                </div>
+                {/* 색이 무슨 뜻인지 안 적어두면 세 가지 색이 그냥 얼룩으로 보인다 */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]" style={{ color: 'var(--ink-3)' }}>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: 'var(--did)' }} /> 한 날
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: 'var(--plan-line)' }} /> 할 날
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: 'var(--miss)' }} /> 지나갔는데 빈 날
+                  </span>
+                </div>
               </div>
             )}
           </section>
