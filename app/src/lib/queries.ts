@@ -141,10 +141,24 @@ export async function getToday(): Promise<TodayData> {
   const krTodayLogs: Record<string, SessionLog[]> = {};
   for (const kr of dailyKrs) {
     const mine = krLogs.filter((l) => l.key_result_id === kr.id);
-    // 주간형이든 최종형이든 지표에 쌓인 current_value 하나만 믿는다.
-    // 주간형은 월요일 0시 크론이 0으로 되돌리므로 그 값이 곧 이번 주 실적이다.
-    // (기록에서 다시 세면 크론이 리셋한 값과 어긋나 화면과 진행률이 따로 논다)
-    krWeekDone[kr.id] = Number(kr.current_value);
+    /*
+      이번 주 실적을 어디서 읽나 — 지표 종류에 따라 다르다.
+
+      주간형: current_value 를 그대로 믿는다. 월요일 0시 크론이 0으로 되돌리므로
+        그 값이 곧 이번 주 실적이다. 기록에서 다시 세면 크론이 리셋한 값과 어긋나
+        화면과 진행률이 따로 논다.
+
+      최종형 + 이번 주 몫(015): current_value 는 처음부터 쌓인 전체값(4/12)이라
+        이번 주 실적이 아니다. 월요일 이후 기록만 더해서 센다.
+        내용형은 metrics 를 안 남기므로(kr-ledger) step 으로 친다.
+    */
+    if (kr.cadence === 'weekly') {
+      krWeekDone[kr.id] = Number(kr.current_value);
+    } else {
+      const step = Number(kr.step) > 0 ? Number(kr.step) : 1;
+      const sum = mine.reduce((acc, l) => acc + (l.metrics?.[0]?.v ?? step), 0);
+      krWeekDone[kr.id] = Math.round(sum * 100) / 100;
+    }
     krTodayLogs[kr.id] = mine
       .filter((l) => new Date(new Date(l.logged_at).getTime() + 9 * 3600_000).toISOString().slice(0, 10) === date)
       .sort((a, b) => a.logged_at.localeCompare(b.logged_at));

@@ -127,6 +127,25 @@ async function revertOne(log: LogRow): Promise<void> {
  * 어떤 출처에서 나온 기록을 통째로 되돌린다 (일정 되돌리기·할일 삭제용).
  * 지표가 안 걸린 기록은 값을 건드릴 게 없으므로 그냥 지운다.
  */
+/**
+ * 오늘 이 지표에 남긴 기록을 전부 되돌린다.
+ *
+ * '갈아끼우기'를 위한 것이다 — 노션이 세어주는 코테처럼, 오늘 값이 5였다가 8이 되는 지표는
+ * 더하면 13이 된다. 오늘 것을 먼저 물리고 새 값을 얹어야 8로 끝난다.
+ * 어제 것은 건드리지 않는다. 이번 주 누적은 어제 것 위에 오늘 값을 더한 결과여야 한다.
+ */
+export async function revertKrLogsToday(krId: string): Promise<number> {
+  const { kstToday } = await import('./types');
+  const dayStartUtc = new Date(`${kstToday()}T00:00:00+09:00`).toISOString();
+  const { data, error } = await db()
+    .from('session_logs').select('id,key_result_id,metrics')
+    .eq('key_result_id', krId)
+    .gte('logged_at', dayStartUtc);
+  if (error) throw new Error(`오늘 기록 조회 실패: ${error.message}`);
+  for (const log of (data ?? []) as LogRow[]) await revertOne(log);
+  return (data ?? []).length;
+}
+
 export async function revertKrLogsWhere(
   where: { eventId?: string; taskId?: string; initiativeId?: string },
 ): Promise<number> {

@@ -203,7 +203,7 @@ export async function createGoalPlan(payload: {
   areaId: string;
   title: string;
   dueDate: string | null;
-  krs: { title: string; target: number; unit: string; start?: number; cadence?: 'total' | 'weekly'; mode?: 'check' | 'number' | 'text' }[];
+  krs: { title: string; target: number; unit: string; start?: number; cadence?: 'total' | 'weekly'; mode?: 'check' | 'number' | 'text'; weeklyTarget?: number }[];
   weeks: { weekOf: string; title: string }[];
   parentId?: string | null;
 }) {
@@ -242,6 +242,8 @@ export async function createGoalPlan(payload: {
         current_value: start,
         cadence,
         input_mode: k.mode ?? 'number',
+        // 주간형은 target_value 가 곧 이번 주 몫이라 null 로 둔다 (krWeeklyTarget 이 합쳐 읽는다)
+        weekly_target: cadence === 'total' && Number(k.weeklyTarget) > 0 ? Number(k.weeklyTarget) : null,
       };
     });
   if (krRows.length > 0) {
@@ -275,7 +277,7 @@ export async function updateGoalPlan(payload: {
   areaId: string;
   title: string;
   dueDate: string | null;
-  krs: { id?: string; title: string; target: number; unit: string; start?: number; cadence?: 'total' | 'weekly'; mode?: 'check' | 'number' | 'text' }[];
+  krs: { id?: string; title: string; target: number; unit: string; start?: number; cadence?: 'total' | 'weekly'; mode?: 'check' | 'number' | 'text'; weeklyTarget?: number }[];
   weeks: { weekOf: string; title: string }[];
 }) {
   const id = must(payload.id, '목표');
@@ -307,6 +309,7 @@ export async function updateGoalPlan(payload: {
       start_value: start,
       cadence,
       input_mode: k.mode ?? 'number',
+      weekly_target: cadence === 'total' && Number(k.weeklyTarget) > 0 ? Number(k.weeklyTarget) : null,
     };
     if (k.id && existing.has(k.id)) {
       keptIds.add(k.id);

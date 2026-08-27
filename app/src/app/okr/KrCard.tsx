@@ -100,6 +100,25 @@ export default function KrCard({
         />
       </div>
 
+      {/*
+        이번 주 몫 — 최종형에서만 묻는다.
+        "코테 100문제"를 최종으로 잡으면 이번 주에 몇 개를 풀어야 하는지가 어디에도 없었다.
+        그래서 오늘 할일에 띄울 근거가 없었고, 주간으로 바꾸면 100이라는 선이 사라졌다.
+        둘은 다른 질문이라 칸을 나눈다. 비워두면 오늘 할일에 안 뜨고 목표 화면에만 남는다.
+      */}
+      {!weekly && (
+        <div className="flex items-center gap-2.5">
+          <span className="w-12 shrink-0 text-[13px]" style={{ color: 'var(--ink-3)' }}>이번 주</span>
+          <input
+            value={kr.weekly ?? ''}
+            onChange={(e) => onChange({ weekly: e.target.value })}
+            placeholder="예: 20 — 비우면 오늘 할일에 안 떠요"
+            aria-label={`${kr.title || '지표'} 이번 주 몫`}
+            className="min-w-0 flex-1 !py-1.5"
+          />
+        </div>
+      )}
+
       {/* 기록 방식 — 체크할 때 무엇을 받을지. 이름으로 성격을 추측하던 걸 대신한다. */}
       <div className="flex items-start gap-2.5">
         <span className="w-12 shrink-0 pt-1 text-[13px]" style={{ color: 'var(--ink-3)' }}>기록</span>

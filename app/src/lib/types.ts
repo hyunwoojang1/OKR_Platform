@@ -26,7 +26,37 @@ export type KeyResult = {
   step: number;
   /** sum=기록할 때마다 더한다 / set=적은 값으로 갈아끼운다(측정값). 014 */
   accrual: 'sum' | 'set';
+  /**
+   * 이번 주에 해야 할 몫. 015.
+   * 최종형에서만 쓴다 — 주간형은 target_value 가 곧 주간 몫이라 null 이다.
+   * 이 값이 있어야 오늘 할일에 뜬다. 읽을 때는 krWeeklyTarget() 하나로 통일한다.
+   */
+  weekly_target: number | null;
 };
+
+/**
+ * 노션 「푼 문제」가 세어주는 지표인가.
+ *
+ * 이 지표는 손으로 세는 게 아니라 노션이 정답이라, 오늘 할일 줄에 '노션에서 가져오기'가
+ * 붙고 기록이 더하기가 아니라 갈아끼우기로 동작한다.
+ * 판별 잣대가 서버(집계)와 화면(버튼)에서 갈리면 버튼은 있는데 안 오르는 지표가 생긴다.
+ */
+const CODING_KR = /코테|코딩\s*테스트|알고리즘|문제\s*풀이|프로그래머스|백준|\bPS\b|SQL/i;
+export function isCodingKr(kr: Pick<KeyResult, 'title'>): boolean {
+  return CODING_KR.test(kr.title);
+}
+
+/**
+ * 이번 주에 해야 할 몫. 없으면 null — 오늘 할일에 안 뜬다.
+ *
+ * 두 갈래를 여기서 합친다. 주간형은 목표값 자체가 이번 주 몫이고,
+ * 최종형은 따로 적은 weekly_target 이 이번 주 몫이다(015).
+ * 이 계산을 화면마다 다시 쓰면 한쪽만 고치는 사고가 난다.
+ */
+export function krWeeklyTarget(kr: Pick<KeyResult, 'cadence' | 'target_value' | 'weekly_target'>): number | null {
+  const v = kr.cadence === 'weekly' ? kr.target_value : kr.weekly_target;
+  return v != null && Number(v) > 0 ? Number(v) : null;
+}
 
 /**
  * 페이스 지표인지. 저장은 소수 분(6.27)으로 하되 사람에겐 6:16으로 보여준다 —

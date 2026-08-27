@@ -19,6 +19,12 @@ export type KRDraft = {
    *   text   — 내용을 받는다 (지원한 회사명, 틀린 유형). 개수는 1씩 오르고 적은 건 기록에 남는다
    */
   mode?: KrMode;
+  /**
+   * 이번 주 몫 — 최종형에서만 쓴다(015). "코테 100문제"의 이번 주 20문제.
+   * 최종 목표와 이번 주 할 일은 다른 질문이라 칸을 나눴다.
+   * 비어 있으면 오늘 할일에 안 뜬다.
+   */
+  weekly?: string;
 };
 
 export type KrMode = 'check' | 'number' | 'text';
@@ -96,6 +102,8 @@ export function toKrPayload(k: KRDraft) {
     start: parseAmount(k.start).num > 0 ? parseAmount(k.start).num : undefined,
     cadence: (k.cadence ?? 'total') as 'total' | 'weekly',
     mode: krMode(k),
+    // 주간형은 target 이 곧 주간 몫이라 따로 보내지 않는다 (읽을 땐 krWeeklyTarget 이 합친다)
+    weeklyTarget: k.cadence === 'weekly' ? undefined : (parseAmount(k.weekly).num || undefined),
   };
 }
 

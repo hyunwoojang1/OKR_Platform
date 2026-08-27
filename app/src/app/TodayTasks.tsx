@@ -1,7 +1,8 @@
 import { toggleTask, toggleHabitLog, createTask, promoteTaskToRoutine, undoKrProgress } from '@/lib/actions';
 import { TaskEditor } from './RowEditors';
+import TodayKrRow from './TodayKrRow';
 import type { Area, DailyTask, Habit, HabitLog, Initiative, KeyResult, SessionLog } from '@/lib/types';
-import { krUnit } from '@/lib/types';
+import { krUnit, krWeeklyTarget } from '@/lib/types';
 
 /**
  * 오늘 할일 — 오늘 한 번 하고 끝나는 것들.
@@ -94,10 +95,11 @@ type Props = {
   repeated: Record<string, number>;
   dailyKrs: KeyResult[];
   krTodayLogs: Record<string, SessionLog[]>;
+  krWeekDone: Record<string, number>;
 };
 
 export default function TodayTasks({
-  date, tasks, habits, habitLogs, weekInitiatives, areas, repeated, dailyKrs, krTodayLogs,
+  date, tasks, habits, habitLogs, weekInitiatives, areas, repeated, dailyKrs, krTodayLogs, krWeekDone,
 }: Props) {
   const areaOf = (id: string | null) => areas.find((a) => a.id === id);
 
@@ -115,8 +117,20 @@ export default function TodayTasks({
   const krDone = dailyKrs.flatMap((kr) =>
     (krTodayLogs[kr.id] ?? []).map((log) => ({ kr, log })));
 
+  /*
+    이번 주에 해야 할 것 — 목표에서 정한 '이번 주 몫'이 있는 지표가 여기 뜬다.
+
+    할일 행(daily_tasks)을 새로 만들지 않고 지표에서 바로 뽑는다. 매일 아침 행을 찍으면
+    안 한 날마다 찌꺼기가 쌓이고, 그걸 지우고 되돌리는 연쇄를 또 관리해야 한다.
+    파생이면 "안 한 날은 그냥 또 뜬다"와 "이번 주 몫을 채우면 취소선"이 저절로 성립한다.
+
+    오늘 이미 적은 것은 여기서 빠진다 — 아래 '오늘 해낸 것'에 되돌리기와 함께 이미 있다.
+  */
+  const weekKrs = dailyKrs.filter((kr) => krWeeklyTarget(kr) != null);
+  const todoKrs = weekKrs.filter((kr) => (krTodayLogs[kr.id] ?? []).length === 0);
+
   const doneItems = habitDone.length + krDone.length;
-  const total = tasks.length + doneItems;
+  const total = tasks.length + todoKrs.length + doneItems;
   const done = tasks.filter((x) => x.done).length + doneItems;
 
   return (
@@ -127,6 +141,19 @@ export default function TodayTasks({
       </div>
 
       {total === 0 && <p className="t-sub py-4 text-center">＋ 버튼으로 오늘을 설계해보세요</p>}
+
+      {todoKrs.length > 0 && (
+        <Section label="이번 주에 해야 할 것">
+          {todoKrs.map((kr) => (
+            <TodayKrRow
+              key={kr.id}
+              kr={kr}
+              color="var(--accent)"
+              weekDone={krWeekDone[kr.id] ?? 0}
+            />
+          ))}
+        </Section>
+      )}
 
       {plainTasks.length > 0 && (
         <Section label="할 일">

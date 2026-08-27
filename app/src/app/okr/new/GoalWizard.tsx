@@ -6,7 +6,7 @@ import { createGoalPlan, normalizeKrDrafts, suggestGoalPlan } from '@/lib/action
 import type { Area } from '@/lib/types';
 import { kstToday } from '@/lib/types';
 import KrCard from '../KrCard';
-import { type KRDraft, MAX_KRS, krSentence, krUnit, parseAmount, isKrFilled, krMode } from '../krDraft';
+import { type KRDraft, MAX_KRS, krSentence, krUnit, parseAmount, isKrFilled, krMode, toKrPayload } from '../krDraft';
 
 type UpcomingEvent = { title: string; date: string };
 
@@ -343,8 +343,9 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
     // 예전 초안이 잠깐 보인다. 이 setState는 단계 전환 시 1회뿐이라 연쇄 렌더가 안 난다.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setReviewedKrs(null);
+    // 확정과 같은 잣대로 고른다 — 아래에서 자리 번호로 검토본과 짝지으므로 목록이 어긋나면 안 된다.
     const raw = krs
-      .filter((k) => k.title.trim() && parseAmount(k.target).num > 0)
+      .filter(isKrFilled)
       .map((k) => ({ title: k.title, target: k.target, start: k.start, weekly: k.cadence === 'weekly' }));
     if (raw.length === 0) return;
     startReviewTransition(async () => {
@@ -358,19 +359,19 @@ export default function GoalWizard({ areas, upcoming }: { areas: Area[]; upcomin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
-  // 검토·확정에 쓰는 최종 지표: AI 검토본이 있으면 그것, 없으면 로컬 해석.
-  const finalKrs =
-    reviewedKrs ??
-    krs
-      .filter(isKrFilled)
-      .map((k) => ({
-        title: k.title.trim(),
-        target: parseAmount(k.target).num,
-        unit: krUnit(k),
-        start: parseAmount(k.start).num > 0 ? parseAmount(k.start).num : undefined,
-        cadence: (k.cadence ?? 'total') as 'total' | 'weekly',
-        mode: krMode(k),
-      }));
+  /*
+    확정에 쓸 최종 지표.
+
+    AI 검토는 '표기'만 다듬는다 — "30km" 를 30 과 km 로 가른다. 기록 방식(완료만·숫자·내용)과
+    이번 주 몫은 사용자가 직접 고른 값이고 검토본에는 아예 없다. 그런데 예전엔 검토본으로
+    통째로 갈아끼워서, 자소서를 '내용'으로 골라놔도 검토가 끝나면 '숫자'로 되돌아갔다.
+    그래서 초안을 바탕으로 두고 검토본은 표기만 덮어쓴다.
+  */
+  const finalKrs = krs.filter(isKrFilled).map((k, i) => {
+    const base = toKrPayload(k);
+    const r = reviewedKrs?.[i];
+    return r ? { ...base, title: r.title, target: r.target, unit: r.unit, start: r.start, cadence: r.cadence } : base;
+  });
 
   function acceptGhost(i: number) {
     const ghost = weekGhosts[i];

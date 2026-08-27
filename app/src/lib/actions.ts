@@ -33,6 +33,7 @@ export {
   deleteLog,
   createLog,
   deleteKeyResult,
+  pullCodingFromNotion,
 } from './actions/kr';
 export {
   createTask,

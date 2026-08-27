@@ -105,6 +105,16 @@ export async function logKrProgress(form: FormData) {
     throw new Error('무엇을 했는지 적어주세요');
   }
 
+  /*
+     갈아끼우기 — 노션이 세어주는 코테처럼 '오늘 총 몇 개'가 들어오는 지표.
+     그냥 더하면 5문제 뒤에 8을 넣었을 때 13이 된다. 오늘 것만 먼저 물리고 새 값을 얹는다.
+     어제 것은 안 건드리므로 이번 주 누적은 그대로 이어진다.
+  */
+  if (form.get('replace_today') === 'true') {
+    const { revertKrLogsToday } = await import('../kr-ledger');
+    await revertKrLogsToday(kr.id);
+  }
+
   // 지표를 올리고 기록을 남기는 건 원장 한 곳에서만 한다.
   // 기록은 내용형에서 "언제 어디 지원했는지"를 되짚는 근거이기도 하다.
   const body = note || `${kr.title} ${delta}${kr.unit ?? ''}`;
@@ -212,4 +222,35 @@ export async function deleteKeyResult(form: FormData) {
   revalidatePath('/');
   revalidatePath('/okr');
   if (kr.objective_id) revalidatePath(`/okr/${kr.objective_id}`);
+}
+
+/**
+ * 노션 「푼 문제」에서 오늘 푼 개수를 가져온다 — 오늘 할일의 코테 줄 버튼.
+ *
+ * 지표 값은 여기서 안 건드린다(writeKr:false). 숫자를 칸에 넣어주기만 하고,
+ * 실제 기록은 사용자가 '기록'을 눌러 원장을 거친다 — 되돌릴 근거가 남아야 하기 때문이다.
+ * 밤 10시 크론은 같은 함수를 writeKr:true 로 돌려 사람이 안 눌러도 값이 맞게 한다.
+ *
+ * 프로덕션에서 throw 는 digest 로 가려지므로 던지지 않고 한국어 문장을 돌려준다.
+ */
+export async function pullCodingFromNotion(): Promise<
+  { ok: true; today: number; thisWeek: number; filled: number } | { ok: false; message: string }
+> {
+  try {
+    const { runCodingIngest } = await import('../coding-ingest');
+    const r = await runCodingIngest({ writeKr: false });
+    revalidatePath('/');
+    return { ok: true, today: r.today, thisWeek: r.thisWeek, filled: r.filled.length };
+  } catch (e) {
+    console.error('[pullCodingFromNotion]', e);
+    const raw = e instanceof Error ? e.message : '';
+    return {
+      ok: false,
+      message: /Notion 401|unauthorized/i.test(raw)
+        ? '노션 연결이 끊겼어요. 토큰을 다시 확인해 주세요'
+        : /NOTION_CODING_DS_ID|연결돼 있지 않/.test(raw)
+          ? '노션 표가 연결돼 있지 않아요'
+          : '노션에서 못 가져왔어요. 잠시 뒤 다시 눌러보세요',
+    };
+  }
 }

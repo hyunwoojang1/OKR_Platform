@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { logKrProgress, deleteKeyResult } from '@/lib/actions';
 import SwipeRow from './SwipeRow';
-import { fmtKrValue, krUnit, isPaceKr, type KeyResult, type SessionLog } from '@/lib/types';
+import { fmtKrValue, krUnit, isPaceKr, krWeeklyTarget, type KeyResult, type SessionLog } from '@/lib/types';
 
 /**
  * 루틴 박스의 지표 한 줄.
@@ -26,20 +26,33 @@ export default function KrRow({ kr, color, done, todayLogs }: {
   const [open, setOpen] = useState(false);
   // 재서 갈아끼우는 지표(모의고사 평균·최장 거리)는 "얼마나 더"가 아니라 "지금 얼마"를 묻는다.
   const isSet = kr.accrual === 'set';
-  const target = kr.target_value == null ? null : Number(kr.target_value);
+  /*
+    무엇에 대고 그리나 — 이번 주 몫이 있으면 그게 이 줄의 잣대다.
+
+    최종형 + 이번 주 몫(015)인 지표는 done 이 '이번 주 실적'이라, 최종 목표(100)에 대고
+    그리면 3/100 처럼 영영 안 차는 막대가 된다. 이번 주 몫(20)에 대고 그리고,
+    최종은 캡션에서 따로 말한다.
+  */
+  const weekTarget = krWeeklyTarget(kr);
+  const finalTarget = kr.target_value == null ? null : Number(kr.target_value);
+  const hasSeparateFinal = kr.cadence === 'total' && weekTarget != null && finalTarget != null;
+  const target = weekTarget ?? finalTarget;
   const filled = target != null && done >= target;
   // 목표치가 없는 지표는 채운다는 개념이 없다. 점선 빈 칸으로 두면 "아직 못 했다"로 읽힌다.
   const openEnded = target == null;
   const unit = krUnit(kr);
   const todayCount = todayLogs.length;
 
+  const finalNote = hasSeparateFinal
+    ? ` · 전체 ${fmtKrValue(kr, Number(kr.current_value))}/${fmtKrValue(kr, finalTarget)}${unit}`
+    : '';
   const caption = filled
-    ? kr.cadence === 'weekly' ? '이번 주 다 채웠어요' : '목표를 다 채웠어요'
+    ? (weekTarget != null ? '이번 주 다 채웠어요' : '목표를 다 채웠어요') + finalNote
     : openEnded
       ? '정해진 개수 없이 쌓아가는 것'
       : isSet
         ? `지금 ${fmtKrValue(kr, done)}${unit} · 목표 ${fmtKrValue(kr, target)}${unit}`
-        : `${Math.round((target - done) * 100) / 100}${unit} 더`;
+        : `${Math.round((target - done) * 100) / 100}${unit} 더${finalNote}`;
 
   return (
     <SwipeRow

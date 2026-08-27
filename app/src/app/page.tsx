@@ -209,6 +209,7 @@ export default async function TodayPage() {
             repeated={t.repeated}
             dailyKrs={t.dailyKrs}
             krTodayLogs={t.krTodayLogs}
+            krWeekDone={t.krWeekDone}
           />
           <DeadlineBox
             date={t.date}
