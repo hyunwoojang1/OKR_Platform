@@ -90,6 +90,13 @@ function usePref<T>(key: string, fallback: T, normalize: (raw: unknown) => T): [
   return [value, write];
 }
 
+/** 범례에 쓸 세 상태와 말. 달력에 칠하는 순서와 같게 둔다. */
+const LEGEND = [
+  ['did', '해낸 날'],
+  ['plan', '할 날'],
+  ['miss', '지나갔는데 빈 날'],
+] as const;
+
 export default function CalendarView({
   month, today, initialSelected, events, jobs, logs, goals, krs, syncLabel, syncConnected,
 }: {
@@ -413,14 +420,18 @@ export default function CalendarView({
                     >
                       {i + 1}
                     </span>
+                    {/*
+                      목표를 켜면 이 점들을 감춘다.
+
+                      평소엔 초록 점이 '일정 있음', 빨간 점이 '공고'다. 그런데 목표를 켜면
+                      칸 색과 날짜 동그라미가 '해낸 날/할 날/빈 날'을 말하기 시작하고,
+                      그 위에 뜻이 다른 점이 겹치면 무엇을 가리키는지 알 수 없게 된다.
+                      실제로 "저 점이 작은 점이냐 큰 점이냐"는 말을 들었다.
+                      목표를 켠 화면은 '이 목표를 언제 했나' 하나만 답하는 자리로 둔다.
+                    */}
                     <span className="flex h-1.5 items-center gap-0.5">
-                      {/*
-                        목표를 켠 동안엔 이 점을 중립색으로 낮춘다.
-                        평소엔 초록이 '일정 있음'이지만, 목표를 켜면 범례가 초록을 '한 날'로 쓴다.
-                        같은 초록이 두 뜻을 가지면 살구색 칸 위의 초록 점이 "기록 있는데 빈 날"로 읽힌다.
-                      */}
-                      {hasEv && <span className="h-1.5 w-1.5 rounded-full" style={{ background: focus ? 'var(--ink-4)' : 'var(--accent)' }} />}
-                      {dJobs.length > 0 && <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--urgent)' }} />}
+                      {!focus && hasEv && <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--accent)' }} />}
+                      {!focus && dJobs.length > 0 && <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--urgent)' }} />}
                     </span>
                   </button>
                 );
@@ -432,17 +443,31 @@ export default function CalendarView({
                   <span>「{focus.title}」{focus.dueDate ? ` · 마감 ${focus.dueDate.slice(5).replace('-', '/')}` : ''}</span>
                   <button onClick={() => setFocusGoal(null)} className="underline underline-offset-2">해제</button>
                 </div>
-                {/* 색이 무슨 뜻인지 안 적어두면 세 가지 색이 그냥 얼룩으로 보인다 */}
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]" style={{ color: 'var(--ink-3)' }}>
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: 'var(--did)' }} /> 한 날
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: 'var(--plan-line)' }} /> 할 날
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: 'var(--miss)' }} /> 지나갔는데 빈 날
-                  </span>
+                {/*
+                  범례는 달력에 실제로 그려진 것과 똑같이 생겨야 한다.
+
+                  예전엔 작은 색 점 세 개였는데, 달력에는 점이 아니라 '칸 배경색 + 날짜 동그라미'로
+                  그려져 있었다. 게다가 날짜 밑에 '일정 있음' 점이 따로 있어서, 범례의 점이
+                  그 점을 가리키는지 칸 색을 가리키는지 알 수가 없었다.
+                  그래서 범례 한 칸을 달력 한 칸의 축소판으로 만든다 — 배경과 동그라미를 그대로 쓴다.
+                */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11.5px]" style={{ color: 'var(--ink-3)' }}>
+                  {LEGEND.map(([m, label]) => (
+                    <span key={m} className="flex items-center gap-1.5">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg"
+                        style={{ background: MARK_BG[m] }} aria-hidden>
+                        <span className="mono flex h-4 w-4 items-center justify-center rounded-full text-[9.5px]"
+                          style={m === 'did'
+                            ? { background: 'var(--did)', color: '#fff', fontWeight: 500 }
+                            : m === 'miss'
+                              ? { border: `1.5px solid ${MARK_DOT.miss}`, color: 'var(--miss)' }
+                              : { color: 'var(--ink-2)' }}>
+                          1
+                        </span>
+                      </span>
+                      {label}
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
