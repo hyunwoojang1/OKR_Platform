@@ -1,7 +1,7 @@
 import { db } from './db';
 import type { Area, Objective, Milestone, KeyResult, Initiative, DailyTask, Habit, HabitLog, CalendarEvent, SessionLog } from './types';
 import { kstToday, kstMonday } from './types';
-import { isDeadlineEvent, ddayOf, DEADLINE_LEAD_DAYS } from './deadline';
+import { isDeadlineEvent, ddayOf, DEADLINE_LEAD_DAYS, DEADLINE_OVERDUE_DAYS } from './deadline';
 
 const DEFAULT_AREAS: Array<Pick<Area, 'name' | 'color' | 'icon'> & { sort_order: number }> = [
   { name: '운동', color: '#10b981', icon: '💪', sort_order: 1 },
@@ -99,13 +99,18 @@ export async function getToday(): Promise<TodayData> {
     db().from('calendar_events').select('*').gte('starts_at', dayStartUtc).lte('starts_at', dayEndUtc).order('starts_at'),
     db().from('initiatives').select('*').eq('status', 'active').eq('week_of', kstMonday()).order('priority'),
     db().from('session_logs').select('note,logged_at').eq('kind', 'check').gte('logged_at', sinceUtc),
-    // 오늘 할일에 띄울 지표 (활성 목표의 것만)
-    db().from('key_results').select('*, objectives!inner(status)').eq('show_daily', true).eq('objectives.status', 'active'),
+    // 루틴 박스에 띄울 지표 — 활성 목표의 것이면서 '손으로 올리는' 것만.
+    // 자동 집계(habit_agg·api·goal_agg)를 여기 띄우면 사용자가 체크해서 숫자를 올려도
+    // 다음 동기화가 계산값으로 덮어쓴다. "분명 체크했는데 왜 원래대로 돌아갔지"가 된다.
+    db().from('key_results').select('*, objectives!inner(status)')
+      .eq('show_daily', true).eq('objectives.status', 'active').eq('source', 'manual'),
     // 이번 주 기록 — 주간형 실적과 오늘 기록을 여기서 가른다
     db().from('session_logs').select('*').not('key_result_id', 'is', null).gte('logged_at', `${kstMonday()}T00:00:00+09:00`),
-    // 곧 닥친 마감 (오늘 ~ D+lead). 지난 것은 '과거 마감'이 따로 다룬다.
+    // 곧 닥친 마감과, 놓친 지 얼마 안 된 마감.
+    // 예전엔 하한이 '오늘'이라 어제 체크를 못 한 마감이 다음 날 홈에서 조용히 사라졌다.
+    // 놓쳤다는 사실 자체를 알려주지 않으니 가장 나쁜 쪽으로 틀린 것이었다.
     db().from('calendar_events').select('*')
-      .gte('starts_at', dayStartUtc)
+      .gte('starts_at', new Date(new Date(dayStartUtc).getTime() - DEADLINE_OVERDUE_DAYS * 86400_000).toISOString())
       .lte('starts_at', new Date(new Date(dayStartUtc).getTime() + (DEADLINE_LEAD_DAYS + 1) * 86400_000).toISOString())
       .order('starts_at'),
   ]);
@@ -146,9 +151,13 @@ export async function getToday(): Promise<TodayData> {
   }
 
   if (dueQ.error) throw new Error(`마감 조회 실패: ${dueQ.error.message}`);
-  // 마감으로 판정됐고, 아직 안 끝냈고, D-3 안에 든 것만 올린다.
-  const dueEvents = ((dueQ.data ?? []) as CalendarEvent[])
-    .filter((e) => !e.done_at && isDeadlineEvent(e) && ddayOf(e.starts_at, date) <= DEADLINE_LEAD_DAYS);
+  // 마감으로 판정됐고, 아직 안 끝냈고, 창 안에 든 것.
+  // 위아래 한계를 한 줄에 같이 적는다 — 예전엔 조회 하한과 이 조건이 서로 다른 말을 했다.
+  const dueEvents = ((dueQ.data ?? []) as CalendarEvent[]).filter((e) => {
+    if (e.done_at || !isDeadlineEvent(e)) return false;
+    const d = ddayOf(e.starts_at, date);
+    return d >= -DEADLINE_OVERDUE_DAYS && d <= DEADLINE_LEAD_DAYS;
+  });
 
   return {
     date,

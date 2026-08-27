@@ -137,3 +137,9 @@ export function ddayOf(startsAt: string, today: string): number {
 
 /** 마감이 오늘 할일에 올라오기 시작하는 시점 — 미리 처리할 여유를 준다. */
 export const DEADLINE_LEAD_DAYS = 3;
+
+/**
+ * 놓친 마감을 며칠까지 홈에 남겨둘지.
+ * 0이면 마감일이 지나는 순간 사라진다 — 놓쳤다는 사실 자체를 못 보게 되는 게 가장 나쁘다.
+ */
+export const DEADLINE_OVERDUE_DAYS = 14;

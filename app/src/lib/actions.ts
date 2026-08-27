@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { db } from './db';
 import { kstToday, kstQuarter, kstMonday } from './types';
 import { CERT_NAMES, cleanEventTitle, isDeadlineEvent } from './deadline';
+import { actionMessage, type ActionState } from './form';
 
 // 모든 액션 공통: 입력을 서버에서 검증하고(빈 문자열 거부), 실패는 명시적으로 던진다.
 function must(v: FormDataEntryValue | null, name: string): string {
@@ -125,11 +126,16 @@ export async function logKrProgress(form: FormData) {
 
   const { data: kr, error } = await db()
     .from('key_results')
-    .select('id,title,unit,current_value,objective_id,input_mode,step,cadence')
+    .select('id,title,unit,current_value,objective_id,input_mode,step,cadence,source')
     .eq('id', id)
     .maybeSingle();
   if (error) throw new Error(`지표 조회 실패: ${error.message}`);
   if (!kr) throw new Error('지표를 찾을 수 없습니다');
+  // 자동으로 세는 지표는 손으로 올려봐야 다음 동기화가 덮어쓴다.
+  // "분명 체크했는데 왜 원래대로 돌아갔지"가 되므로, 아예 받지 않고 이유를 말한다.
+  if (kr.source !== 'manual') {
+    throw new Error(`'${kr.title}'은(는) 자동으로 세는 지표예요. 루틴을 체크하면 따라 올라갑니다`);
+  }
 
   let delta = Number(kr.step) || 1;
   if (kr.input_mode === 'number') {
@@ -605,6 +611,17 @@ export async function setEventDeadline(form: FormData) {
 export async function setEventKr(form: FormData) {
   const id = must(form.get('id'), '일정');
   const krId = ((form.get('key_result_id') as string) ?? '').trim() || null;
+  // 화면에서 안 보여주는 것만으로는 부족하다 — 예전에 열린 화면이나 오래된 링크가 남는다.
+  // 자동으로 세는 지표에 마감을 걸면, 완료해서 숫자를 올려도 다음 동기화가 계산값으로 덮어쓴다.
+  if (krId) {
+    const { data: kr, error: krErr } = await db()
+      .from('key_results').select('source,title').eq('id', krId).maybeSingle();
+    if (krErr) throw new Error(`지표 조회 실패: ${krErr.message}`);
+    if (!kr) throw new Error('지표를 찾을 수 없습니다');
+    if (kr.source !== 'manual') {
+      throw new Error(`'${kr.title}'은(는) 자동으로 세는 지표라 마감에 걸 수 없어요`);
+    }
+  }
   await run('지표 연결', () => db().from('calendar_events').update({ key_result_id: krId }).eq('id', id));
   revalidatePath('/calendar');
   revalidatePath('/');
@@ -724,6 +741,40 @@ export async function seedSeasons() {
     ]),
   );
   revalidateSeasons();
+}
+
+
+// ── 화면에 메시지를 돌려주는 판 ──
+//
+// 원 액션은 그대로 두고 형제로 감싼다. 시그니처를 바꾸면 <form action={fn}> 으로
+// 그 액션을 쓰는 컴포넌트가 전부 깨지고, 클라이언트에서 화살표로 감싸면
+// JS 없이 폼이 제출되는 이점(progressive enhancement)을 잃는다.
+// suggestGoalPlan 이 이미 같은 이유로 ok:false 를 돌려주고 있다.
+
+async function asState(fn: (fd: FormData) => Promise<void>, fd: FormData): Promise<ActionState> {
+  try { await fn(fd); return { ok: true }; } catch (e) { return { ok: false, message: actionMessage(e) }; }
+}
+
+export async function toggleEventDoneState(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return asState(toggleEventDone, fd);
+}
+export async function createSeasonState(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return asState(createSeason, fd);
+}
+export async function updateSeasonState(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return asState(updateSeason, fd);
+}
+export async function logKrProgressState(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return asState(logKrProgress, fd);
+}
+export async function undoKrProgressState(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return asState(undoKrProgress, fd);
+}
+export async function toggleHabitLogState(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return asState(toggleHabitLog, fd);
+}
+export async function toggleTaskState(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return asState(toggleTask, fd);
 }
 
 // D-day 보드 핀: 달력 일정에 📌 → 홈 카운트다운 등재/해제

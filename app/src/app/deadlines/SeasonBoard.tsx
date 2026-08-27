@@ -1,7 +1,10 @@
 'use client';
 
-import { useState } from 'react';
-import { createSeason, updateSeason, deleteSeason, setEventSeason, seedSeasons } from '@/lib/actions';
+import { useActionState, useEffect, useState } from 'react';
+import {
+  createSeasonState, updateSeasonState, deleteSeason, setEventSeason, seedSeasons,
+} from '@/lib/actions';
+import type { ActionState } from '@/lib/form';
 import type { SeasonLite } from '@/lib/deadline';
 
 export type EventLite = {
@@ -33,14 +36,24 @@ function fmtRange(s: SeasonLite): string {
 const INPUT = 'w-full rounded-lg border px-2 py-1.5 text-[14px]';
 const INPUT_STYLE = { borderColor: 'var(--line-strong)' } as const;
 
-/** 시즌 하나를 만들거나 고치는 폼. 만들기와 고치기가 칸이 같아서 한 컴포넌트로 둔다. */
+/**
+ * 시즌 하나를 만들거나 고치는 폼. 만들기와 고치기가 칸이 같아서 한 컴포넌트로 둔다.
+ *
+ * 실패하면 그 자리에 한국어로 말한다. 예전엔 성공·실패와 무관하게 폼을 닫아버려서
+ * 오류가 증발했고, 그 사이 화면 전체가 영어 오류 페이지로 대체돼 쓰던 내용까지 날아갔다.
+ */
 function SeasonForm({
   season, onDone,
 }: { season: SeasonLite | null; onDone: () => void }) {
-  const action = season ? updateSeason : createSeason;
+  const action = season ? updateSeasonState : createSeasonState;
+  const [state, submit, pending] = useActionState<ActionState, FormData>(action, null);
+
+  // 성공했을 때만 닫는다 — 실패했는데 닫으면 무엇이 잘못됐는지 볼 자리가 없어진다.
+  useEffect(() => { if (state?.ok) onDone(); }, [state, onDone]);
+
   return (
     <form
-      action={async (fd) => { await action(fd); onDone(); }}
+      action={submit}
       className="mt-2 space-y-2 rounded-xl border p-2.5"
       style={{ borderColor: 'var(--line-strong)', background: 'var(--surface)' }}
     >
@@ -61,10 +74,16 @@ function SeasonForm({
         제목에 이 말이 하나라도 있으면 이 폴더로 갑니다. 기간보다 말이 먼저예요 —
         9월에 공채와 자격증이 겹치면 날짜로는 못 가르거든요.
       </p>
+      {state && !state.ok && (
+        <p role="alert" className="rounded-lg px-2.5 py-2 text-[13px]"
+          style={{ background: 'var(--urgent-line)', color: 'var(--ink)' }}>
+          {state.message}
+        </p>
+      )}
       <div className="flex items-center gap-2">
-        <button type="submit" className="rounded-lg px-3 py-1.5 text-[12.5px] font-medium"
-          style={{ background: 'var(--ink)', color: '#fff' }}>
-          {season ? '저장' : '폴더 만들기'}
+        <button type="submit" disabled={pending} className="rounded-lg px-3 py-1.5 text-[12.5px] font-medium"
+          style={{ background: 'var(--ink)', color: '#fff', opacity: pending ? 0.55 : 1 }}>
+          {pending ? '저장 중…' : season ? '저장' : '폴더 만들기'}
         </button>
         <button type="button" onClick={onDone} className="t-cap underline">취소</button>
       </div>

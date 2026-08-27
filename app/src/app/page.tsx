@@ -68,7 +68,8 @@ export default async function TodayPage() {
   const habitsChecked = t.habits.filter((h) => habitDone(h.id)).length;
   const activeKRs = tree.keyResults.filter((kr) => {
     const obj = tree.objectives.find((o) => o.id === kr.objective_id);
-    return obj?.status === 'active' && kr.target_value > 0;
+    // 목표값이 없는 지표(내용형)는 "평균 몇 %" 에 넣을 수 없다 — 분자도 분모도 없다.
+    return obj?.status === 'active' && (kr.target_value ?? 0) > 0;
   });
   const krAvg = activeKRs.length
     ? Math.round(activeKRs.reduce((s, kr) => s + krPct(kr), 0) / activeKRs.length)
@@ -385,7 +386,7 @@ export default async function TodayPage() {
           <ul className="space-y-3">
             {activeObjectives.map((obj) => {
               const area = areaOf(obj.area_id);
-              const krs = tree.keyResults.filter((k) => k.objective_id === obj.id && k.target_value > 0);
+              const krs = tree.keyResults.filter((k) => k.objective_id === obj.id && (k.target_value ?? 0) > 0);
               const pct = krs.length ? Math.round(krs.reduce((s, k) => s + krPct(k), 0) / krs.length) : 0;
               return (
                 <li key={obj.id}>

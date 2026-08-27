@@ -119,7 +119,7 @@ export default async function GoalDetailPage({
               {krs.map((kr, i) => {
                 const kpct = krPct(kr);
                 const isWeekly = kr.cadence === 'weekly';
-                const isDecrease = !isWeekly && kr.start_value > kr.target_value;
+                const isDecrease = !isWeekly && kr.target_value != null && kr.start_value > kr.target_value;
                 return (
                   <div key={kr.id}>
                     {i > 0 && <div className="divider mx-4" />}

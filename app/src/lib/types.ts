@@ -11,7 +11,10 @@ export type Milestone = {
   id: string; objective_id: string; month: string; title: string; status: 'active' | 'done' | 'dropped';
 };
 export type KeyResult = {
-  id: string; objective_id: string; title: string; target_value: number; current_value: number;
+  id: string; objective_id: string; title: string;
+  /** 010 에서 nullable 이 됐다 — 내용형 지표는 개수 목표 없이도 성립한다. 타입만 몰랐다. */
+  target_value: number | null;
+  current_value: number;
   unit: string; source: 'manual' | 'habit_agg' | 'api' | 'log_agg' | 'goal_agg'; source_ref: string | null;
   /** 시작값 — target보다 크면 줄이기형(체중 75→70). 진행률=(현재-시작)/(목표-시작) */
   start_value: number;
@@ -66,6 +69,9 @@ export function fmtKrValue(kr: Pick<KeyResult, 'title'>, value: number): string 
 
 /** 지표 진행률(0~100). 시작값(줄이기 포함)·주기형을 모두 처리하는 단일 공식 — 모든 화면이 이걸 쓴다. */
 export function krPct(kr: Pick<KeyResult, 'start_value' | 'target_value' | 'current_value' | 'cadence'>): number {
+  // 목표값이 없는 지표(내용형)는 "몇 % 왔다"는 개념이 없다.
+  // 이걸 안 막으면 null - 0 = 0 이 되어 span 0 → 100% 로 나온다. 아무것도 안 했는데 다 한 것처럼.
+  if (kr.target_value == null) return 0;
   const start = kr.cadence === 'weekly' ? 0 : (kr.start_value ?? 0);
   const span = kr.target_value - start;
   if (span === 0) return 100;

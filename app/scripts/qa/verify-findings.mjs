@@ -124,7 +124,15 @@ const FINDINGS = [
       const body = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
       const korean = body.includes('시작이 종료보다');
       const english = /server error occurred|couldn.t load/i.test(body);
-      return { reproduced: english && !korean, detail: `화면: "${body.slice(0, 70)}"` };
+      // 결함 = 서버가 말한 한국어 안내가 사용자에게 도달하지 않는 것.
+      // "영어 화면이 아니다"만으로는 부족하다 — 아무 말도 안 하고 조용히 실패해도 통과해버린다.
+      const alert = await page.locator('[role="alert"]').first().innerText().catch(() => '');
+      return {
+        reproduced: !korean,
+        detail: korean
+          ? `그 자리에 뜬 메시지: "${alert || '(role=alert 없음)'}"`
+          : `한국어 안내 없음 · 영어화면 ${english ? 'O' : 'X'} · 화면: "${body.slice(0, 60)}"`,
+      };
     },
   },
   {
@@ -160,11 +168,27 @@ const FINDINGS = [
         objective_id: objective.id, title: uniq('자동지표'), target_value: 20, current_value: 0,
         unit: '회', source: 'habit_agg', source_ref: habit.id,
       });
+      // '목표 진척'에 이름이 보이는 건 정상이다. 문제는 **손으로 올릴 수 있는 자리**에
+      // 있는가 — 루틴 박스와 달력의 지표 선택지, 이 둘만 본다.
       await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-      const onHome = await page.getByText(kr.title, { exact: false }).count() > 0;
+      const routine = page.locator('section').filter({ has: page.getByRole('heading', { name: '루틴' }) });
+      const inRoutine = await routine.count() > 0 && (await routine.first().innerText()).includes(kr.title);
+
+      // 달력: 마감의 ⚙ 를 열어 지표 선택지를 실제로 펼친다
+      const ev = await makeDeadline(created, { title: uniq('연결시험') });
       await page.goto(CAL, { waitUntil: 'networkidle' });
-      const inPicker = (await page.content()).includes(kr.title);
-      return { reproduced: onHome || inPicker, detail: `홈 루틴 노출 ${onHome ? 'O' : 'X'} · 달력 지표 선택지 ${inPicker ? 'O' : 'X'}` };
+      const gear = page.getByRole('button', { name: new RegExp(`${ev.title} 마감 여부`) });
+      let inPicker = false;
+      if (await gear.count()) {
+        await gear.click();
+        await page.waitForTimeout(400);
+        const sel = page.getByLabel(new RegExp(`${ev.title} 끝내면 오를 지표`));
+        if (await sel.count()) inPicker = (await sel.locator('option').allInnerTexts()).some((o) => o.includes(kr.title));
+      }
+      return {
+        reproduced: inRoutine || inPicker,
+        detail: `루틴 박스 ${inRoutine ? '노출' : '없음'} · 달력 지표 선택지 ${inPicker ? '노출' : '없음'}`,
+      };
     },
   },
   {

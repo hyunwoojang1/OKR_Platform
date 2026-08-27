@@ -34,7 +34,7 @@ export default function WeeklyMetricCard({ krs, logs }: { krs: KeyResult[]; logs
             .filter((l) => l.note?.startsWith(kr.title) && l.metrics?.length)
             .sort((a, b) => b.logged_at.localeCompare(a.logged_at));
           const last = past[0]?.metrics?.[0]?.v ?? null;
-          const goingDown = kr.target_value < kr.start_value;
+          const goingDown = kr.target_value != null && kr.target_value < kr.start_value;
           const diff = last == null ? null : Math.round((Number(kr.current_value) - last) * 100) / 100;
           return (
             <li key={kr.id} className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">

@@ -39,7 +39,7 @@ function laggingKRs(krs: KeyResult[], objectives: Objective[], today: string): A
   const elapsed = (now.getTime() - qStart) / (qEnd - qStart);
   const out: Array<{ kr: KeyResult; objTitle: string; gap: number }> = [];
   for (const kr of krs) {
-    if (kr.target_value <= 0) continue;
+    if ((kr.target_value ?? 0) <= 0) continue;  // 목표값 없는 내용형은 경과율 비교 대상이 아니다
     if (kr.cadence === 'weekly') continue; // 매주형은 분기 경과율 비교 대상이 아니다
     const progress = krPct(kr) / 100;
     const gap = elapsed - progress;

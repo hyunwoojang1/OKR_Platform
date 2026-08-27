@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { syncCalendar } from '@/lib/google-calendar';
 import type { Area, CalendarEvent, Initiative, JobPosting, KeyResult, Objective, SessionLog } from '@/lib/types';
-import { kstToday } from '@/lib/types';
+import { kstToday, krPct } from '@/lib/types';
 import CalendarView, { type GoalLite, type LogLite } from './CalendarView';
 import type { KrLite } from './DeadlineCheck';
 
@@ -50,8 +50,11 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
 
   const goals: GoalLite[] = objectives.map((o) => {
     const myKrs = krs.filter((k) => k.objective_id === o.id);
-    const pct = myKrs.length
-      ? Math.round(myKrs.reduce((s, k) => s + Math.min(100, (k.current_value / k.target_value) * 100), 0) / myKrs.length)
+    // 진행률은 krPct 하나로만 낸다 — 여기서 직접 나누면 목표값이 없을 때 Infinity 가 되고,
+    // 시작값·주기형 처리도 빠진다(줄이기형 지표가 반대로 나온다).
+    const counted = myKrs.filter((k) => k.target_value != null);
+    const pct = counted.length
+      ? Math.round(counted.reduce((s, k) => s + krPct(k), 0) / counted.length)
       : 0;
     return {
       id: o.id,
@@ -65,9 +68,10 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
     };
   });
 
-  // 일정에 걸 수 있는 지표는 살아있는 목표의 것만 — 끝난 목표를 고르게 두면 헷갈리기만 한다.
+  // 일정에 걸 수 있는 지표는 살아있는 목표의 것 중 '손으로 올리는' 것만.
+  // 끝난 목표를 고르게 두면 헷갈리고, 자동 집계 지표를 고르게 두면 다음 동기화가 덮어쓴다.
   const krLites: KrLite[] = krs
-    .filter((k) => objectives.some((o) => o.id === k.objective_id))
+    .filter((k) => k.source === 'manual' && objectives.some((o) => o.id === k.objective_id))
     .map((k) => ({
       id: k.id,
       title: k.title,
