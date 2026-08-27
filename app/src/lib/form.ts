@@ -24,3 +24,24 @@ export function actionMessage(e: unknown): string {
   if (/^Error$|digest/i.test(text)) return '문제가 생겼어요. 잠시 뒤 다시 시도해주세요.';
   return text;
 }
+
+/**
+ * 모든 서버 액션 공통: 입력을 서버에서 검증하고(빈 문자열 거부), 실패는 명시적으로 던진다.
+ * 'use server' 파일은 async 함수만 export 할 수 있어서 이 둘은 여기 산다.
+ */
+export function must(v: FormDataEntryValue | null, name: string): string {
+  const s = typeof v === 'string' ? v.trim() : '';
+  if (!s) throw new Error(`${name} 값이 비어 있습니다`);
+  if (s.length > 500) throw new Error(`${name}이(가) 너무 깁니다`);
+  return s;
+}
+
+/**
+ * db() 쓰기의 결과를 확인하고, 실패하면 무엇이 실패했는지 붙여서 던진다.
+ * 이걸 안 거치면 Supabase 는 던지지 않으므로 실패가 어디에도 안 남는다
+ * (ESLint goalhub/checked-db-write 가 그걸 막는다).
+ */
+export async function run(op: string, fn: () => PromiseLike<{ error: { message: string } | null }>) {
+  const { error } = await fn();
+  if (error) throw new Error(`${op} 실패: ${error.message}`);
+}

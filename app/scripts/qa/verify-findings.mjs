@@ -1,7 +1,7 @@
 import { chromium } from 'file:///C:/Users/notebiz765/AppData/Local/npm-cache/_npx/e41f203b7505f1fb/node_modules/playwright/index.mjs';
 import { beginHarness, endHarness, created } from './lib/guard.mjs';
 import { db, TAG } from './lib/db.mjs';
-import { makeGoal, makeDeadline, makeHabit, mk, kstToday, uniq } from './lib/fixtures.mjs';
+import { makeGoal, makeDeadline, mk, kstToday, uniq } from './lib/fixtures.mjs';
 import { env } from './lib/env.mjs';
 
 /**

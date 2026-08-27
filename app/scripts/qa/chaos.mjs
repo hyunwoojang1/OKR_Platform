@@ -1,6 +1,6 @@
 import { chromium } from 'file:///C:/Users/notebiz765/AppData/Local/npm-cache/_npx/e41f203b7505f1fb/node_modules/playwright/index.mjs';
 import { beginHarness, endHarness, created } from './lib/guard.mjs';
-import { db, TAG, snapshot, diff, fmtDiff, rowCount } from './lib/db.mjs';
+import { db, TAG, rowCount } from './lib/db.mjs';
 import { makeGoal, makeDeadline, makeHabit, makeTask, mk, kstToday, uniq } from './lib/fixtures.mjs';
 import { env } from './lib/env.mjs';
 
@@ -71,7 +71,7 @@ const press = async (page, url, name, wait = 1400) => {
   return true;
 };
 
-async function round(page, n) {
+async function round(page) {
   const acts = [];
   const log = (s) => acts.push(s);
 
@@ -171,7 +171,7 @@ try {
 
   for (let i = 1; i <= ROUNDS; i += 1) {
     const t0 = Date.now();
-    const { acts, bad } = await round(page, i);
+    const { acts, bad } = await round(page);
     console.log(`── ${i}회차 (${Math.round((Date.now() - t0) / 1000)}초) ─ 조작 ${acts.length}건`);
     console.log(`   ${acts.join(' · ')}`);
     if (bad.length) { failures += bad.length; console.log(`   ✖ 불변식 깨짐 ${bad.length}건:`); for (const b of bad) console.log(`      ${b}`); }
